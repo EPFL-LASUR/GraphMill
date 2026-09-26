@@ -6,3 +6,8 @@ provider = "opentransportdata_ckan"
 publisher = "opentransportdata.swiss"
 dataset_search_query = "GTFS2020"
 output_filename = "switzerland.gtfs.zip"
+
+[gtfs.france]
+provider = "static_url"
+url = "https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip"
+output_filename = "france.gtfs.zip"
