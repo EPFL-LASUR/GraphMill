@@ -102,6 +102,7 @@ def clip_to_bbox(input_file: Path, output_file: Path, bbox: tuple[float, float, 
     """
     output_file.parent.mkdir(parents=True, exist_ok=True)
     bbox_str = ",".join(str(v) for v in bbox)
+    print(f"Clipping {input_file.name} to bbox ({bbox_str})...")
     subprocess.run(
         [
             "osmium", "extract",
@@ -123,6 +124,7 @@ def filter_for_otp(input_file: Path, output_file: Path) -> Path:
     metadata too, so the file is as light as possible for the graph build.
     """
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Filtering {input_file.name} for OTP (streets, platforms, park & ride, restrictions)...")
     subprocess.run(
         [
             "osmium", "tags-filter",
