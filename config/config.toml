@@ -16,3 +16,8 @@ output_filename = "france.gtfs.zip"
 provider = "static_url"
 url = "https://download.gtfs.de/germany/free/latest.zip"
 output_filename = "germany.gtfs.zip"
+
+[gtfs.italy]
+provider = "static_url"
+url = "https://proxy.busone.app/trenitalia/gtfs.zip"
+output_filename = "italy.gtfs.zip"
