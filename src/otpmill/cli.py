@@ -1,6 +1,6 @@
 import typer
 from .config import load_config
-from .gtfs import download as download_gtfs, download_feed
+from .gtfs import download_all_feed, download_feed
 from .osm import SUPPORTED_COUNTRIES, process as process_osm
 
 app = typer.Typer(help="Download and preprocess data for OpenTripPlanner.")
@@ -39,6 +39,7 @@ def osm(
 @app.command()
 def gtfs(
     feed: list[str] = typer.Option(None, "--feed", "-g", help="GTFS feed to download, as named in config.toml. Can be specified multiple times."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-o", help="Re-download even if the raw file already exists.")
 ):
     """Download configured GTFS feed(s)."""
     config = load_config()
@@ -47,7 +48,7 @@ def gtfs(
     if invalid:
         raise typer.BadParameter("Unknown GTFS feed(s): " + ", ".join(sorted(invalid)) + ". Configured: " + ", ".join(sorted(config.gtfs_feeds)))
     for name in names:
-        path = download_feed(name, config.gtfs_feeds[name])
+        path = download_feed(name, config.gtfs_feeds[name], overwrite=overwrite)
         typer.echo(f"Raw GTFS ({name}): {path}")
 
 
@@ -62,7 +63,7 @@ def all_data(
     process_osm(config.osm_countries, bbox=_parse_bbox(bbox) or config.osm_bbox, overwrite=overwrite)
 
     typer.echo("\n=== GTFS ===")
-    for name, path in download_gtfs(config.gtfs_feeds).items():
+    for name, path in download_all_feed(config.gtfs_feeds, overwrite=overwrite).items():
         typer.echo(f"Raw GTFS ({name}): {path}")
 
 

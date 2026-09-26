@@ -154,11 +154,11 @@ def _download(url: str, destination: Path) -> None:
 # ...), write a function with this signature and register it -- nothing
 # else in this file or in config.py needs to change.
 # ---------------------------------------------------------------------------
-PROVIDERS: dict[str, Callable[[str, GtfsFeedConfig], Path]] = {}
+PROVIDERS: dict[str, Callable[[str, GtfsFeedConfig, bool], Path]] = {}
 
 
 def register_provider(name: str):
-    def decorator(func: Callable[[str, GtfsFeedConfig], Path]) -> Callable[[str, GtfsFeedConfig], Path]:
+    def decorator(func: Callable[[str, GtfsFeedConfig, bool], Path]) -> Callable[[str, GtfsFeedConfig, bool], Path]:
         PROVIDERS[name] = func
         return func
     return decorator
@@ -168,6 +168,7 @@ def register_provider(name: str):
 def _provider_opentransportdata_ckan(
     feed_name: str,
     feed: GtfsFeedConfig,
+    overwrite: bool = False
 ) -> Path:
     """Discover and download the latest matching feed from opentransportdata.swiss's CKAN catalogue."""
 
@@ -184,7 +185,7 @@ def _provider_opentransportdata_ckan(
     )
     print(f"[{feed_name}] Latest GTFS resource: {resource_name}")
 
-    if destination.exists():
+    if destination.exists() and not overwrite:
         print(f"[{feed_name}] Already downloaded: {destination}")
         return destination
 
@@ -196,14 +197,14 @@ def _provider_opentransportdata_ckan(
 
 
 @register_provider("static_url")
-def _provider_static_url(feed_name: str, feed: GtfsFeedConfig) -> Path:
+def _provider_static_url(feed_name: str, feed: GtfsFeedConfig, overwrite: bool = False) -> Path:
     """Download a GTFS feed from a fixed URL given as `url` under [gtfs.<name>]."""
     url = feed.options.get("url")
     if not url:
         raise ValueError(f"gtfs.{feed_name} uses provider 'static_url' but has no 'url' set")
     destination = RAW_GTFS_DIR / feed.output_filename
 
-    if destination.exists():
+    if destination.exists() and not overwrite:
         print(f"[{feed_name}] Already downloaded: {destination}")
         return destination
 
@@ -213,7 +214,7 @@ def _provider_static_url(feed_name: str, feed: GtfsFeedConfig) -> Path:
     return destination
 
 
-def download_feed(feed_name: str, feed: GtfsFeedConfig) -> Path:
+def download_feed(feed_name: str, feed: GtfsFeedConfig, overwrite: bool = False) -> Path:
     """Download a single GTFS feed as described in config.toml's [gtfs.<feed_name>]."""
     try:
         provider = PROVIDERS[feed.provider]
@@ -222,9 +223,9 @@ def download_feed(feed_name: str, feed: GtfsFeedConfig) -> Path:
             f"Unknown GTFS provider '{feed.provider}' for gtfs.{feed_name}. "
             f"Available: {', '.join(sorted(PROVIDERS))}"
         )
-    return provider(feed_name, feed)
+    return provider(feed_name, feed, overwrite)
 
 
-def download(feeds: dict[str, GtfsFeedConfig]) -> dict[str, Path]:
+def download_all_feed(feeds: dict[str, GtfsFeedConfig], overwrite: bool = False) -> dict[str, Path]:
     """Download every feed in `feeds` (as loaded from config.toml)."""
-    return {name: download_feed(name, feed) for name, feed in feeds.items()}
+    return {name: download_feed(name, feed, overwrite=overwrite) for name, feed in feeds.items()}
