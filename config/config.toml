@@ -11,3 +11,8 @@ output_filename = "switzerland.gtfs.zip"
 provider = "static_url"
 url = "https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip"
 output_filename = "france.gtfs.zip"
+
+[gtfs.germany]
+provider = "static_url"
+url = "https://download.gtfs.de/germany/free/latest.zip"
+output_filename = "germany.gtfs.zip"
