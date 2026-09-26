@@ -1,6 +1,6 @@
 import typer
 from .config import load_config
-from .gtfs import prepare_switzerland
+from .gtfs import download as download_gtfs, download_feed
 from .osm import SUPPORTED_COUNTRIES, process as process_osm
 
 app = typer.Typer(help="Download and preprocess data for OpenTripPlanner.")
@@ -37,11 +37,18 @@ def osm(
 
 
 @app.command()
-def gtfs():
-    """Download the newest Swiss GTFS feed for the active timetable."""
+def gtfs(
+    feed: list[str] = typer.Option(None, "--feed", "-g", help="GTFS feed to download, as named in config.toml. Can be specified multiple times."),
+):
+    """Download configured GTFS feed(s)."""
     config = load_config()
-    path = prepare_switzerland(query=config.gtfs_dataset_search_query)
-    typer.echo(f"Raw GTFS: {path}")
+    names = feed or list(config.gtfs_feeds)
+    invalid = set(names) - set(config.gtfs_feeds)
+    if invalid:
+        raise typer.BadParameter("Unknown GTFS feed(s): " + ", ".join(sorted(invalid)) + ". Configured: " + ", ".join(sorted(config.gtfs_feeds)))
+    for name in names:
+        path = download_feed(name, config.gtfs_feeds[name])
+        typer.echo(f"Raw GTFS ({name}): {path}")
 
 
 @app.command(name="all")
@@ -55,8 +62,8 @@ def all_data(
     process_osm(config.osm_countries, bbox=_parse_bbox(bbox) or config.osm_bbox, overwrite=overwrite)
 
     typer.echo("\n=== GTFS ===")
-    path = prepare_switzerland(query=config.gtfs_dataset_search_query)
-    typer.echo(f"Raw GTFS: {path}")
+    for name, path in download_gtfs(config.gtfs_feeds).items():
+        typer.echo(f"Raw GTFS ({name}): {path}")
 
 
 if __name__ == "__main__":

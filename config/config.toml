@@ -2,6 +2,7 @@
 countries = ["switzerland", "france", "germany", "italy", "liechtenstein", "austria"]
 
 [gtfs.switzerland]
+provider = "opentransportdata_ckan"
 publisher = "opentransportdata.swiss"
 dataset_search_query = "GTFS2020"
 output_filename = "switzerland.gtfs.zip"
