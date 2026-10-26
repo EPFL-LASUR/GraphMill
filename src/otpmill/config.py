@@ -27,7 +27,7 @@ class GtfsFeedConfig:
 @dataclass(frozen=True)
 class Config:
     osm_countries: list[str]
-    osm_bbox: tuple[float, float, float, float] | None
+    bbox: tuple[float, float, float, float] | None
     gtfs_feeds: dict[str, GtfsFeedConfig]
 
 
@@ -53,6 +53,6 @@ def load_config() -> Config:
 
     return Config(
         osm_countries=osm["countries"],
-        osm_bbox=bbox,
+        bbox=bbox,
         gtfs_feeds=gtfs_feeds,
     )

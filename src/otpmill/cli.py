@@ -33,13 +33,14 @@ def osm(
     if invalid:
         raise typer.BadParameter("Unsupported country(s): " + ", ".join(sorted(invalid)) + ". Supported: " + ", ".join(sorted(SUPPORTED_COUNTRIES)))
     typer.echo("Processing countries: " + ", ".join(countries))
-    process_osm(countries, bbox=_parse_bbox(bbox) or config.osm_bbox, overwrite=overwrite)
+    process_osm(countries, bbox=_parse_bbox(bbox) or config.bbox, overwrite=overwrite)
 
 
 @app.command()
 def gtfs(
-    feed: list[str] = typer.Option(None, "--feed", "-g", help="GTFS feed to download, as named in config.toml. Can be specified multiple times."),
-    overwrite: bool = typer.Option(False, "--overwrite", "-o", help="Re-download even if the raw file already exists.")
+    feed: list[str] = typer.Option(None, "--feed", "-f", help="GTFS feed to download, as named in config.toml. Can be specified multiple times."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-o", help="Re-download even if the raw file already exists."),
+    bbox: str = BBOX_OPTION
 ):
     """Download configured GTFS feed(s)."""
     config = load_config()
@@ -60,7 +61,7 @@ def all_data(
     """Download and preprocess all configured source data."""
     config = load_config()
     typer.echo("=== OSM ===")
-    process_osm(config.osm_countries, bbox=_parse_bbox(bbox) or config.osm_bbox, overwrite=overwrite)
+    process_osm(config.osm_countries, bbox=_parse_bbox(bbox) or config.bbox, overwrite=overwrite)
 
     typer.echo("\n=== GTFS ===")
     for name, path in download_all_feed(config.gtfs_feeds, overwrite=overwrite).items():
