@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "dataclasses>=0.8",
     "datetime>=6.0",
+    "gtfsmith",
     "httpx>=0.28.1",
     "osmium>=4.3.1",
     "pathlib>=1.0.1",
@@ -24,3 +25,6 @@ otpmill = "otpmill.cli:app"
 [build-system]
 requires = ["uv_build>=0.12.6,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+gtfsmith = { git = "https://github.com/EPFL-LASUR/GTFSmith.git", tag="v0.2.0" }
