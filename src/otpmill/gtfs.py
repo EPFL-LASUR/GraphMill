@@ -6,8 +6,11 @@ from typing import Callable
 from tqdm import tqdm
 import re
 import httpx
+import shutil
 
-from .config import RAW_GTFS_DIR, GtfsFeedConfig
+from gtfsmith import filter_gtfs_per_bbox, merge_multiple_gtfs, normalize_swiss_routes, merge_duplicated_physical_stops
+
+from .config import RAW_GTFS_DIR, OTP_DIR, PREPROCESS_DIR, GtfsFeedConfig
 
 CKAN_API = "https://ckan.opendata.swiss/api/3/action"
 
@@ -229,3 +232,128 @@ def download_feed(feed_name: str, feed: GtfsFeedConfig, overwrite: bool = False)
 def download_all_feed(feeds: dict[str, GtfsFeedConfig], overwrite: bool = False) -> dict[str, Path]:
     """Download every feed in `feeds` (as loaded from config.toml)."""
     return {name: download_feed(name, feed, overwrite=overwrite) for name, feed in feeds.items()}
+
+
+def clip_all_feeds(
+    raw_files: dict[str, Path],
+    bbox: tuple[float, float, float, float] | None = None,
+    overwrite: bool = False,
+) -> dict[str, Path]:
+    """Clip all downloaded GTFS feeds and save them in OTP_DIR."""
+
+    OTP_DIR.mkdir(parents=True, exist_ok=True)
+
+    clipped_files: dict[str, Path] = {}
+
+    for name, raw_file in raw_files.items():
+        output_file = OTP_DIR / f"{name}.ready.gtfs.zip"
+
+        if output_file.exists() and not overwrite:
+            print(f"[{name}] Already clipped: {output_file}")
+            clipped_files[name] = output_file
+            continue
+
+        if bbox is None:
+            print(f"[{name}] No bounding box provided; copying unchanged feed to otp folder")
+            shutil.copy2(raw_file, output_file)
+        else:
+            print(f"[{name}] Clipping GTFS feed")
+
+            filter_gtfs_per_bbox(
+                raw_file,
+                bbox,
+                output_file,
+            )
+
+        print(f"[{name}] Saved clipped feed to: {output_file}")
+        clipped_files[name] = output_file
+
+    return clipped_files
+
+
+def preprocess_all_feeds(
+    files: dict[str, Path],
+    overwrite: bool = False,
+) -> dict[str, Path]:
+    """Preprocess all clipped feeds and save OTP-ready files in OTP_DIR."""
+
+    PREPROCESS_DIR.mkdir(parents=True, exist_ok=True)
+
+    PREPROCESSORS: dict[str, Callable] = {
+        "switzerland": normalize_swiss_routes,
+        "france": merge_duplicated_physical_stops,
+    }
+
+    ready_files: dict[str, Path] = {}
+
+    for name, clipped_file in files.items():
+        output_file = PREPROCESS_DIR / f"{name}.preprocessed.gtfs.zip"
+
+        if output_file.exists() and not overwrite:
+            print(f"[{name}] Already preprocessed: {output_file}")
+            ready_files[name] = output_file
+            continue
+
+        print(f"[{name}] Preprocessing GTFS feed")
+
+        preprocessor = PREPROCESSORS.get(name.lower())
+
+        if preprocessor is None:
+            shutil.copy2(clipped_file, output_file)
+        else:
+            preprocessor(
+                clipped_file,
+                output_path=output_file,
+            )
+
+        print(f"[{name}] Saved ready feed to: {output_file}")
+        ready_files[name] = output_file
+
+    return ready_files
+
+
+
+def process(
+    feeds: dict[str, GtfsFeedConfig],
+    bbox: tuple[float, float, float, float] | None = None,
+    overwrite: bool = False,
+) -> list[Path]:
+    """
+    Download, clip, preprocess, and merge GTFS feeds.
+
+    Files are stored in the following locations:
+    - RAW_GTFS_DIR: original downloads
+    - PREPROCESS_DIR: clipped feeds
+    - OTP_DIR: preprocessed feeds and the final merged feed
+    """
+
+    OTP_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("Downloading GTFS feeds")
+    raw_files = download_all_feed(feeds, overwrite=overwrite)
+
+    print("Preprocessing GTFS feeds")
+    preprocessed_files = preprocess_all_feeds(raw_files, overwrite=overwrite,)
+
+    print("Clipping GTFS feeds")
+    clipped_files = clip_all_feeds(preprocessed_files, bbox=bbox, overwrite=overwrite)
+
+    if not clipped_files:
+        raise ValueError("No GTFS feeds were provided.")
+
+    # print("Merging GTFS feeds")
+    # output_file = OTP_DIR / "merged.gtfs.zip"
+
+    # files_to_merge = list(ready_files.values())
+
+    # merge_multiple_gtfs(
+    #     files_to_merge[0],
+    #     files_to_merge[1:],
+    #     output_path=output_file,
+    # )
+
+    # print(f"Saved merged GTFS feed to: {output_file}")
+
+    # return [output_file]
+
+    return [clipped_files]

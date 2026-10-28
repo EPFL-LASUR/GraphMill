@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILE = PROJECT_ROOT / "config" / "config.toml"
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
+PREPROCESS_DIR = DATA_DIR / "preprocess"
 OTP_DIR = DATA_DIR / "otp"
 RAW_OSM_DIR = RAW_DIR / "osm"
 RAW_GTFS_DIR = RAW_DIR / "gtfs"
