@@ -236,8 +236,8 @@ wheels = [
 
 [[package]]
 name = "gtfsmith"
-version = "0.2.0"
-source = { git = "https://github.com/EPFL-LASUR/GTFSmith.git?tag=v0.2.0#50685682aab032e4999a370a99f20ee1cdc0f814" }
+version = "0.2.2"
+source = { git = "https://github.com/EPFL-LASUR/GTFSmith.git?tag=v0.2.2#6e656f9453f48af10cbd225af7017aa6b2deba19" }
 dependencies = [
     { name = "geopandas" },
     { name = "geopy" },
@@ -441,7 +441,7 @@ dependencies = [
 requires-dist = [
     { name = "dataclasses", specifier = ">=0.8" },
     { name = "datetime", specifier = ">=6.0" },
-    { name = "gtfsmith", git = "https://github.com/EPFL-LASUR/GTFSmith.git?tag=v0.2.0" },
+    { name = "gtfsmith", git = "https://github.com/EPFL-LASUR/GTFSmith.git?tag=v0.2.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "osmium", specifier = ">=4.3.1" },
     { name = "pathlib", specifier = ">=1.0.1" },

@@ -27,4 +27,4 @@ requires = ["uv_build>=0.12.6,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-gtfsmith = { git = "https://github.com/EPFL-LASUR/GTFSmith.git", tag="v0.2.0" }
+gtfsmith = { git = "https://github.com/EPFL-LASUR/GTFSmith.git", tag="v0.2.2" }
