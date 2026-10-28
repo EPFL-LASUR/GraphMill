@@ -21,3 +21,8 @@ output_filename = "germany.gtfs.zip"
 provider = "static_url"
 url = "https://proxy.busone.app/trenitalia/gtfs.zip"
 output_filename = "italy.gtfs.zip"
+
+[gtfs.austria]
+provider = "static_url"
+url = "https://static.web.oebb.at/open-data/soll-fahrplan-gtfs/GTFS_Fahrplan_2026.zip"
+output_filename = "austria.gtfs.zip"
