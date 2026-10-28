@@ -36,3 +36,8 @@ output_filename = "eurostar.gtfs.zip"
 provider = "static_url"
 url = "https://files.mobilitydatabase.org/mdb-1077/mdb-1077-202610280127/mdb-1077-202610280127.zip"
 output_filename = "netherlands.gtfs.zip"
+
+[gtfs.spain]
+provider = "static_url"
+url = "https://ssl.renfe.com/gtransit/Fichero_AV_LD/google_transit.zip"
+output_filename = "spain.gtfs.zip"
