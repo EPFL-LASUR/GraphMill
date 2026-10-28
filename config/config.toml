@@ -1,5 +1,5 @@
 [osm]
-countries = ["switzerland", "france", "germany", "italy", "liechtenstein", "austria"]
+countries = ["switzerland", "france", "germany", "italy", "liechtenstein", "austria", "eurostar"]
 
 [gtfs.switzerland]
 provider = "opentransportdata_ckan"
@@ -26,3 +26,8 @@ output_filename = "italy.gtfs.zip"
 provider = "static_url"
 url = "https://static.web.oebb.at/open-data/soll-fahrplan-gtfs/GTFS_Fahrplan_2026.zip"
 output_filename = "austria.gtfs.zip"
+
+ [gtfs.eurostar]
+ provider = "static_url"
+ url = "https://integration-storage.dm.eurostar.com/gtfs-prod/gtfs_static_commercial_v2.zip"
+ output_filename = "eurostar.gtfs.zip"
