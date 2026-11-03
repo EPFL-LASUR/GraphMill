@@ -1,5 +1,5 @@
 [osm]
-countries = ["switzerland", "france", "germany", "italy", "liechtenstein", "austria", "eurostar", "belgium", "netherlands", "spain"]
+countries = ["switzerland", "france", "germany", "italy", "liechtenstein", "austria", "belgium", "netherlands", "spain"]
 
 [gtfs.switzerland]
 provider = "opentransportdata_ckan"
@@ -41,3 +41,9 @@ output_filename = "netherlands.gtfs.zip"
 provider = "static_url"
 url = "https://ssl.renfe.com/gtransit/Fichero_AV_LD/google_transit.zip"
 output_filename = "spain.gtfs.zip"
+
+
+[gtfs.belgium]
+provider = "static_url"
+url = "https://data.gtfs.be/belgium/gtfs/be-gtfs.zip"
+output_filename = "belgium.gtfs.zip"
