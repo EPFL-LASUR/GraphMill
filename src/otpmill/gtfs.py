@@ -329,17 +329,6 @@ def preprocess_germany(gtfs: GTFS) -> GTFS:
     return prefix_stop_ids(gtfs, "DE")
 
 
-def preprocess_belgium(gtfs: GTFS) -> GTFS:
-    """Preprocess the Belgian GTFS feed."""
-
-    print("[belgium] Sorting stop times")
-
-    stop_times = gtfs.files["stop_times.txt"]
-    gtfs.files["stop_times.txt"] = stop_times.sort_values(["trip_id", "stop_sequence"])
-
-    return gtfs
-
-
 def preprocess_spain(gtfs: GTFS) -> GTFS:
     """Preprocess the Spanish GTFS feed."""
 
@@ -396,7 +385,6 @@ def preprocess_all_feeds(
         "spain": preprocess_spain,
         "italy": preprocess_italy,
         "austria": preprocess_austria,
-        "belgium": preprocess_belgium,
     }
 
     ready_files: dict[str, Path] = {}
@@ -423,7 +411,7 @@ def preprocess_all_feeds(
 
         print(f"[{name}] Saving preprocessed GTFS feed")
 
-        gtfs.to_zip(output_file)
+        gtfs.export_gtfs(output_file)
 
         print(f"[{name}] Saved ready feed to: {output_file}")
 
