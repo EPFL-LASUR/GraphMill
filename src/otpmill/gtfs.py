@@ -7,10 +7,17 @@ from tqdm import tqdm
 import re
 import httpx
 import shutil
+import time
 
-from gtfsmith import filter_gtfs_per_bbox, merge_multiple_gtfs, normalize_swiss_routes, merge_duplicated_physical_stops
+
+from gtfsmith import (
+    GTFS, filter_gtfs_per_bbox, merge_multiple_gtfs, normalize_swiss_routes,
+    merge_duplicated_physical_stops, prefix_stop_ids, add_missing_parent_station, 
+    create_parent_stations
+    )
 
 from .config import RAW_GTFS_DIR, OTP_DIR, PREPROCESS_DIR, GtfsFeedConfig
+from .helpers import get_coordinates
 
 CKAN_API = "https://ckan.opendata.swiss/api/3/action"
 
@@ -271,17 +278,125 @@ def clip_all_feeds(
     return clipped_files
 
 
+def preprocess_netherlands(gtfs: GTFS) -> GTFS:
+    """Preprocess the Netherlands GTFS feed."""
+
+    print("[netherlands] Geocoding stops without coordinates")
+
+    stops = gtfs.files["stops.txt"]
+
+    for idx, row in tqdm(stops.iterrows(), total=len(stops), desc="Netherlands stops",):
+        if row["stop_lat"] == 0.0 and row["stop_lon"] == 0.0:
+            lat, lon = get_coordinates(row["stop_name"])
+
+            if lat is not None and lon is not None:
+                stops.at[idx, "stop_lat"] = lat
+                stops.at[idx, "stop_lon"] = lon
+
+            time.sleep(1)
+
+    gtfs.files["stops.txt"] = stops
+
+    print("[netherlands] Adding prefix to stop IDs")
+    gtfs = prefix_stop_ids(gtfs, "NL")
+
+    print("[netherlands] Merging duplicated physical stops")
+    gtfs = merge_duplicated_physical_stops(gtfs)
+
+    return gtfs
+
+
+def preprocess_switzerland(gtfs: GTFS) -> GTFS:
+    """Preprocess the Swiss GTFS feed."""
+
+    print("[switzerland] Normalizing routes")
+    gtfs = normalize_swiss_routes(gtfs)
+
+    return gtfs
+
+
+def preprocess_france(gtfs: GTFS) -> GTFS:
+    """Preprocess the French GTFS feed."""
+
+    print("[france] Merging duplicated physical stops")
+    return merge_duplicated_physical_stops(gtfs)
+
+
+def preprocess_germany(gtfs: GTFS) -> GTFS:
+    """Preprocess the German GTFS feed."""
+
+    print("[germany] Adding prefix to stop IDs")
+    return prefix_stop_ids(gtfs, "DE")
+
+
+def preprocess_belgium(gtfs: GTFS) -> GTFS:
+    """Preprocess the Belgian GTFS feed."""
+
+    print("[belgium] Sorting stop times")
+
+    stop_times = gtfs.files["stop_times.txt"]
+    gtfs.files["stop_times.txt"] = stop_times.sort_values(["trip_id", "stop_sequence"])
+
+    return gtfs
+
+
+def preprocess_spain(gtfs: GTFS) -> GTFS:
+    """Preprocess the Spanish GTFS feed."""
+
+    print("[spain] Creating parent stations")
+    gtfs = create_parent_stations(gtfs)
+
+    print("[spain] Adding prefix to stop IDs")
+    gtfs = prefix_stop_ids(gtfs, "ES")
+
+    return gtfs
+
+
+def preprocess_italy(gtfs: GTFS) -> GTFS:
+    """Preprocess the Italian GTFS feed."""
+
+    print("[italy] Creating parent stations")
+    return create_parent_stations(gtfs)
+
+
+def preprocess_austria(gtfs: GTFS) -> GTFS:
+    """Preprocess the Austrian GTFS feed."""
+
+    print("[austria] Adding missing parent stations")
+    gtfs = add_missing_parent_station(gtfs)
+
+    print("[austria] Merging duplicated physical stops")
+    gtfs = merge_duplicated_physical_stops(gtfs)
+
+    return gtfs
+
+def preprocess_belgium(gtfs: GTFS) -> GTFS:
+    """Preprocess the Belgian GTFS feed."""
+
+    print("[belguim] Adding prefix to stop IDs")
+    gtfs = prefix_stop_ids(gtfs, "BE")
+
+    return gtfs
+
+
 def preprocess_all_feeds(
     files: dict[str, Path],
     overwrite: bool = False,
 ) -> dict[str, Path]:
-    """Preprocess all clipped feeds and save OTP-ready files in OTP_DIR."""
+    """Preprocess GTFS feeds and save the results in PREPROCESS_DIR."""
 
     PREPROCESS_DIR.mkdir(parents=True, exist_ok=True)
 
-    PREPROCESSORS: dict[str, Callable] = {
-        "switzerland": normalize_swiss_routes,
-        "france": merge_duplicated_physical_stops,
+    PREPROCESSORS: dict[str, Callable[[GTFS], GTFS]] = {
+        "netherlands": preprocess_netherlands,
+        "switzerland": preprocess_switzerland,
+        "france": preprocess_france,
+        "germany": preprocess_germany,
+        "belgium": preprocess_belgium,
+        "spain": preprocess_spain,
+        "italy": preprocess_italy,
+        "austria": preprocess_austria,
+        "belgium": preprocess_belgium,
     }
 
     ready_files: dict[str, Path] = {}
@@ -294,19 +409,24 @@ def preprocess_all_feeds(
             ready_files[name] = output_file
             continue
 
-        print(f"[{name}] Preprocessing GTFS feed")
+        print(f"[{name}] Loading GTFS feed")
+
+        gtfs = GTFS.from_zip(clipped_file)
 
         preprocessor = PREPROCESSORS.get(name.lower())
 
-        if preprocessor is None:
-            shutil.copy2(clipped_file, output_file)
+        if preprocessor is not None:
+            print(f"[{name}] Applying preprocessing steps")
+            gtfs = preprocessor(gtfs)
         else:
-            preprocessor(
-                clipped_file,
-                output_path=output_file,
-            )
+            print(f"[{name}] No additional preprocessing required")
+
+        print(f"[{name}] Saving preprocessed GTFS feed")
+
+        gtfs.to_zip(output_file)
 
         print(f"[{name}] Saved ready feed to: {output_file}")
+
         ready_files[name] = output_file
 
     return ready_files
