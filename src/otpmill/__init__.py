@@ -1,4 +1,4 @@
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 from .gtfs import (process as process_gtfs, download_all_feed, download_feed, preprocess_all_feeds, preprocess_austria,
