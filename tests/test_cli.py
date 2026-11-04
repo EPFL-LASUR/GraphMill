@@ -217,7 +217,7 @@ class TestAllCommand:
         assert gtfs_kwargs == {"bbox": CONFIG_BBOX, "overwrite": False}
 
     def test_overwrite_and_bbox_are_forwarded_to_both(self, mocks):
-        result = runner.invoke(cli.app, ["all", "-f", "--bbox", "1,2,3,4"])
+        result = runner.invoke(cli.app, ["all", "-o", "--bbox", "1,2,3,4"])
 
         assert result.exit_code == 0, result.output
         for m in (mocks.osm, mocks.gtfs):

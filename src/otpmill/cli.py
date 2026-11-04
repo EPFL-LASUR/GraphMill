@@ -61,7 +61,7 @@ def gtfs(
 
 @app.command(name="all")
 def all_data(
-    overwrite: bool = typer.Option(False, "--overwrite", "-f", help="Re-download OSM files even if they already exist."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-o", help="Re-download OSM files even if they already exist."),
     bbox: str = BBOX_OPTION,
 ):
     """Download and preprocess all configured source data."""
