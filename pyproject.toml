@@ -28,3 +28,8 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 gtfsmith = { git = "https://github.com/EPFL-LASUR/GTFSmith.git", tag="v0.2.2" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
