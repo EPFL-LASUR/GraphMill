@@ -68,7 +68,7 @@ Supported GTFS feeds:
 - Renfe (long-distance)
 - Belgium
 - Netherlands
-- Eurostart
+- Eurostar
 
 ## Command Line
 
