@@ -6,7 +6,7 @@ from tqdm import tqdm
 from .config import RAW_OSM_DIR, OTP_DIR
 
 GEOFABRIK_BASE_URL = "https://download.geofabrik.de/europe"
-SUPPORTED_COUNTRIES = {"switzerland", "france", "germany", "italy", "liechtenstein", "austria"}
+SUPPORTED_COUNTRIES = {"switzerland", "france", "germany", "italy", "liechtenstein", "austria", "netherlands", "spain", "belgium"}
 
 # Core filter: matches OTP2's own documented recommendation
 # (https://docs.opentripplanner.org/Preparing-OSM/) — streets, transit
