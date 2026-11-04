@@ -1,7 +1,7 @@
 [project]
 name = "otpmill"
 version = "0.1.0"
-description = "Add your description here"
+description = "Download and preprocess OSM and GTFS data of Western Europe for routing machines like OTP. "
 readme = "README.md"
 authors = [
     { name = "karlex27", email = "126259759+karlex27@users.noreply.github.com" }
