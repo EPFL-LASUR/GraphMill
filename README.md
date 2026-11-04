@@ -96,10 +96,10 @@ Existing raw files are reused; `--overwrite` forces a fresh download. Clipping a
 uv run otpmill gtfs
 ```
 
-Only selected feeds (names as in `config.toml`):
+Only selected feeds (names as in `config.toml`), clipped to a bounding box:
 
 ```bash
-uv run otpmill gtfs -f switzerland -f germany
+uv run otpmill gtfs -f switzerland -f germany --bbox 5.9,45.8,10.5,47.8
 ```
 
 ### Everything
