@@ -10,9 +10,9 @@ authors:
   - family-names: "Lepper"
     given-names: "Alexander"
     affiliation: "EPFL"
-    OCRID: "0009-0008-6643-5441"
+    ORCID: "0009-0008-6643-5441"
 
-abstract: "Python package for extracting, building, and matching public transport route networks from OpenStreetMap data."
+abstract: "Python package for downloading and preprocessing OSM and GTFS data for routing machines such as OTP 2.0."
 
 repository-code: "https://github.com/EPFL-ENAC/OTPMill"
 
