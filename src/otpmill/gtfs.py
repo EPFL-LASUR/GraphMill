@@ -425,7 +425,7 @@ def process(
     feeds: dict[str, GtfsFeedConfig],
     bbox: tuple[float, float, float, float] | None = None,
     overwrite: bool = False,
-) -> list[Path]:
+) -> dict[str, Path]:
     """
     Download, clip, preprocess, and merge GTFS feeds.
 
@@ -464,4 +464,4 @@ def process(
 
     # return [output_file]
 
-    return [clipped_files]
+    return clipped_files
