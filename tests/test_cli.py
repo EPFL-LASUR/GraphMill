@@ -13,8 +13,8 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from otpmill import cli
-from otpmill.config import Config, GtfsFeedConfig
+from graphmill import cli
+from graphmill.config import Config, GtfsFeedConfig
 
 runner = CliRunner()
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from otpmill import osm
+from graphmill import osm
 
 
 # ---------------------------------------------------------------------------
@@ -43,10 +43,10 @@ class FakeResponse:
 @pytest.fixture
 def dirs(tmp_path, monkeypatch):
     raw = tmp_path / "raw" / "osm"
-    otp = tmp_path / "otp"
+    ready = tmp_path / "ready"
     monkeypatch.setattr(osm, "RAW_OSM_DIR", raw)
-    monkeypatch.setattr(osm, "OTP_DIR", otp)
-    return raw, otp
+    monkeypatch.setattr(osm, "OTP_DIR", ready)
+    return raw, ready
 
 
 @pytest.fixture
@@ -292,7 +292,7 @@ class TestFilterForOtp:
 @pytest.fixture
 def pipeline(dirs, monkeypatch):
     """Fake out download / clip / filter so process() can be tested in isolation."""
-    raw, otp = dirs
+    raw, ready = dirs
     log = {"download": [], "clip": [], "filter": []}
 
     def fake_download(countries, overwrite=False):
@@ -319,31 +319,31 @@ def pipeline(dirs, monkeypatch):
     monkeypatch.setattr(osm, "download", fake_download)
     monkeypatch.setattr(osm, "clip_to_bbox", fake_clip)
     monkeypatch.setattr(osm, "filter_for_otp", fake_filter)
-    return raw, otp, log
+    return raw, ready, log
 
 
 class TestProcess:
     def test_without_bbox_filters_raw_files_directly(self, pipeline):
-        raw, otp, log = pipeline
+        raw, ready, log = pipeline
 
         outputs = osm.process(["switzerland", "france"])
 
-        assert outputs == [otp / "switzerland.osm.pbf", otp / "france.osm.pbf"]
+        assert outputs == [ready / "switzerland.osm.pbf", ready / "france.osm.pbf"]
         assert log["clip"] == []
         assert [i for i, _ in log["filter"]] == [raw / "switzerland.osm.pbf", raw / "france.osm.pbf"]
         for out in outputs:
             assert out.exists()
 
     def test_with_bbox_clips_then_filters_and_removes_clipped_file(self, pipeline):
-        raw, otp, log = pipeline
+        raw, ready, log = pipeline
         bbox = (6.0, 46.0, 7.0, 47.0)
 
         outputs = osm.process(["switzerland"], bbox=bbox)
 
         clipped = raw / "switzerland.clipped.osm.pbf"
         assert log["clip"] == [(raw / "switzerland.osm.pbf", clipped, bbox)]
-        assert log["filter"] == [(clipped, otp / "switzerland.osm.pbf")]
-        assert outputs == [otp / "switzerland.osm.pbf"]
+        assert log["filter"] == [(clipped, ready / "switzerland.osm.pbf")]
+        assert outputs == [ready / "switzerland.osm.pbf"]
         assert not clipped.exists()
         # The original download must be kept.
         assert (raw / "switzerland.osm.pbf").exists()
@@ -353,11 +353,11 @@ class TestProcess:
         osm.process(["austria"], overwrite=True)
         assert log["download"] == [(["austria"], True)]
 
-    def test_creates_otp_dir(self, pipeline):
-        _, otp, _ = pipeline
-        assert not otp.exists()
+    def test_creates_ready_dir(self, pipeline):
+        _, ready, _ = pipeline
+        assert not ready.exists()
         osm.process(["austria"])
-        assert otp.is_dir()
+        assert ready.is_dir()
 
     def test_empty_country_list(self, pipeline):
         assert osm.process([]) == []

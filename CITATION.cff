@@ -1,7 +1,7 @@
 cff-version: 1.2.0
-message: "If you use OTPMill in your research, please cite it as follows."
+message: "If you use GraphMill in your research, please cite it as follows."
 
-title: "OTPMill"
+title: "GraphMill"
 version: "0.1.2"
 type: software
 date-released: "2026-11-04"
@@ -12,9 +12,9 @@ authors:
     affiliation: "EPFL"
     ORCID: "0009-0008-6643-5441"
 
-abstract: "Python package for downloading and preprocessing OSM and GTFS data for routing machines such as OTP 2.0."
+abstract: "Python package for downloading and preprocessing OSM and GTFS data for routing machines such as OTP 2.0. or MOTIS"
 
-repository-code: "https://github.com/EPFL-ENAC/OTPMill"
+repository-code: "https://github.com/EPFL-ENAC/GraphMill"
 
 license: "GPLv3.0"
 

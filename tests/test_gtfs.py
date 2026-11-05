@@ -11,8 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from otpmill import gtfs as g
-from otpmill.config import GtfsFeedConfig
+from graphmill import gtfs as g
+from graphmill.config import GtfsFeedConfig
 
 
 # ---------------------------------------------------------------------------
@@ -61,11 +61,11 @@ def dirs(tmp_path, monkeypatch):
     d = SimpleNamespace(
         raw=tmp_path / "raw" / "gtfs",
         pre=tmp_path / "preprocess",
-        otp=tmp_path / "otp",
+        ready=tmp_path / "ready",
     )
     monkeypatch.setattr(g, "RAW_GTFS_DIR", d.raw)
     monkeypatch.setattr(g, "PREPROCESS_DIR", d.pre)
-    monkeypatch.setattr(g, "OTP_DIR", d.otp)
+    monkeypatch.setattr(g, "OTP_DIR", d.ready)
     return d
 
 
@@ -440,8 +440,8 @@ class TestClipAllFeeds:
     def test_without_bbox_copies_files(self, dirs, raw_files):
         result = g.clip_all_feeds(raw_files)
         assert result == {
-            "switzerland": dirs.otp / "switzerland.ready.gtfs.zip",
-            "france": dirs.otp / "france.ready.gtfs.zip",
+            "switzerland": dirs.ready / "switzerland.ready.gtfs.zip",
+            "france": dirs.ready / "france.ready.gtfs.zip",
         }
         assert result["france"].read_bytes() == b"france"
 
@@ -458,14 +458,14 @@ class TestClipAllFeeds:
         result = g.clip_all_feeds(raw_files, bbox=bbox)
 
         assert calls == [
-            (raw_files["switzerland"], bbox, dirs.otp / "switzerland.ready.gtfs.zip"),
-            (raw_files["france"], bbox, dirs.otp / "france.ready.gtfs.zip"),
+            (raw_files["switzerland"], bbox, dirs.ready / "switzerland.ready.gtfs.zip"),
+            (raw_files["france"], bbox, dirs.ready / "france.ready.gtfs.zip"),
         ]
         assert result["switzerland"].read_bytes() == b"clipped"
 
     def test_existing_output_is_skipped(self, dirs, raw_files, monkeypatch):
-        dirs.otp.mkdir(parents=True)
-        (dirs.otp / "switzerland.ready.gtfs.zip").write_bytes(b"already")
+        dirs.ready.mkdir(parents=True)
+        (dirs.ready / "switzerland.ready.gtfs.zip").write_bytes(b"already")
         calls = []
         monkeypatch.setattr(g, "filter_gtfs_per_bbox", lambda *a: calls.append(a))
 
@@ -475,8 +475,8 @@ class TestClipAllFeeds:
         assert result["switzerland"].read_bytes() == b"already"
 
     def test_overwrite_reprocesses(self, dirs, raw_files):
-        dirs.otp.mkdir(parents=True)
-        (dirs.otp / "switzerland.ready.gtfs.zip").write_bytes(b"already")
+        dirs.ready.mkdir(parents=True)
+        (dirs.ready / "switzerland.ready.gtfs.zip").write_bytes(b"already")
 
         result = g.clip_all_feeds({"switzerland": raw_files["switzerland"]}, overwrite=True)
 
@@ -484,7 +484,7 @@ class TestClipAllFeeds:
 
     def test_empty_input(self, dirs):
         assert g.clip_all_feeds({}) == {}
-        assert dirs.otp.is_dir()
+        assert dirs.ready.is_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -692,7 +692,7 @@ def stages(dirs, monkeypatch):
     order = []
     raw = {"switzerland": Path("raw/ch.zip")}
     pre = {"switzerland": Path("pre/ch.zip")}
-    clipped = {"switzerland": Path("otp/ch.zip")}
+    clipped = {"switzerland": Path("ready/ch.zip")}
     args = {}
 
     def fake_download(feeds, overwrite=False):
@@ -732,9 +732,9 @@ class TestProcess:
         assert stages.args["preprocess"] == (stages.raw, True)
         assert stages.args["clip"] == (stages.pre, bbox, True)
 
-    def test_creates_otp_dir(self, stages, dirs):
+    def test_creates_ready_dir(self, stages, dirs):
         g.process(self.feeds)
-        assert dirs.otp.is_dir()
+        assert dirs.ready.is_dir()
 
     def test_no_feeds_raises(self, stages):
         stages.clipped.clear()

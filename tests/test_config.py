@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from otpmill import config as cfg
-from otpmill.osm import SUPPORTED_COUNTRIES
+from graphmill import config as cfg
+from graphmill.osm import SUPPORTED_COUNTRIES
 
 # Captured at import time, before any test monkeypatches CONFIG_FILE.
 REAL_CONFIG_FILE = cfg.CONFIG_FILE
@@ -41,7 +41,7 @@ class TestPaths:
         assert cfg.DATA_DIR == cfg.PROJECT_ROOT / "data"
         assert cfg.RAW_DIR == cfg.DATA_DIR / "raw"
         assert cfg.PREPROCESS_DIR == cfg.DATA_DIR / "preprocess"
-        assert cfg.OTP_DIR == cfg.DATA_DIR / "otp"
+        assert cfg.OTP_DIR == cfg.DATA_DIR / "ready"
         assert cfg.RAW_OSM_DIR == cfg.RAW_DIR / "osm"
         assert cfg.RAW_GTFS_DIR == cfg.RAW_DIR / "gtfs"
 
@@ -215,7 +215,7 @@ class TestRealConfig:
         assert real_config.gtfs_feeds
 
     def test_every_feed_has_known_provider(self, real_config):
-        from otpmill.gtfs import PROVIDERS
+        from graphmill.gtfs import PROVIDERS
 
         for name, feed in real_config.gtfs_feeds.items():
             assert feed.provider in PROVIDERS, f"gtfs.{name}: unknown provider {feed.provider}"

@@ -1,11 +1,11 @@
-# otpmill
+# GraphMill
 
-Downloads and preprocesses the data [OpenTripPlanner](https://www.opentripplanner.org/) (OTP2) needs to build a graph:
+Downloads and preprocesses GTFS and OSM data that routing machines such as [OpenTripPlanner](https://www.opentripplanner.org/) (OTP2), [OSRM](https://project-osrm.org/) or [MOTIS](https://github.com/motis-project/motis) need to build a routing graph:
 
 - **OSM**: per-country `.osm.pbf` extracts from Geofabrik, optionally clipped to a bounding box and filtered down to what OTP uses (streets, platforms, park & ride, restrictions, route relations).
 - **GTFS**: public transport feeds from several sources, preprocessed per country (stop ID prefixes, parent stations, duplicate stop merging, ...) and optionally clipped to a bounding box.
 
-Everything ends up in `data/otp/`, ready to be used as OTP's data directory.
+Everything ends up in `data/ready/`, ready to be used as the routing engine's data directory.
 
 ## Requirements
 
@@ -77,54 +77,54 @@ Supported GTFS feeds:
 Download and process all configured countries:
 
 ```bash
-uv run otpmill osm
+uv run graphmill osm
 ```
 
 Only selected countries, clipped to a bounding box:
 
 ```bash
-uv run otpmill osm -c switzerland -c france --bbox 5.9,45.8,10.5,47.8
+uv run graphmill osm -c switzerland -c france --bbox 5.9,45.8,10.5,47.8
 ```
 
-Raw extracts are kept in `data/raw/osm/`. Each country is (optionally) clipped and filtered to what OTP needs (streets, platforms, park & ride, restrictions, route relations), and written to `data/otp/<country>.osm.pbf`. The files are not merged, since OTP loads every `.osm.pbf` in its data folder.
+Raw extracts are kept in `data/raw/osm/`. Each country is (optionally) clipped and filtered to what OTP needs (streets, platforms, park & ride, restrictions, route relations), and written to `data/ready/<country>.osm.pbf`. The files are not merged, since OTP loads every `.osm.pbf` in its data folder.
 
 Existing raw files are reused; `--overwrite` forces a fresh download. Clipping and filtering always re-run.
 
 ### GTFS
 
 ```bash
-uv run otpmill gtfs
+uv run graphmill gtfs
 ```
 
 Only selected feeds (names as in `config.toml`), clipped to a bounding box:
 
 ```bash
-uv run otpmill gtfs -f switzerland -f germany --bbox 5.9,45.8,10.5,47.8
+uv run graphmill gtfs -f switzerland -f germany --bbox 5.9,45.8,10.5,47.8
 ```
 
 ### Everything
 
 ```bash
-uv run otpmill all
+uv run graphmill all
 ```
 
 ## Python
 
 ```python
-from otpmill.config import load_config
-from otpmill.osm import process as process_osm
-from otpmill.gtfs import process as process_gtfs
+from graphmill.config import load_config
+from graphmill.osm import process as process_osm
+from graphmill.gtfs import process as process_gtfs
 
 config = load_config()   # reads config/config.toml
 
-# OSM: returns the list of filtered .osm.pbf files in data/otp/
+# OSM: returns the list of filtered .osm.pbf files in data/ready/
 osm_files = process_osm(
     ["switzerland", "france"],
     bbox=(5.9, 45.8, 10.5, 47.8),   # or None
     overwrite=False,
 )
 
-# GTFS: returns {feed name: path of the final .gtfs.zip in data/otp/}
+# GTFS: returns {feed name: path of the final .gtfs.zip in data/ready/}
 gtfs_files = process_gtfs(
     {name: feed for name, feed in config.gtfs_feeds.items() if name in {"switzerland", "france"}},
     bbox=config.bbox,
@@ -135,7 +135,7 @@ gtfs_files = process_gtfs(
 Individual steps can also be used on their own:
 
 ```python
-from otpmill import osm, gtfs
+from graphmill import osm, gtfs
 
 raw = osm.download_country("austria")                      # data/raw/osm/austria.osm.pbf
 osm.clip_to_bbox(raw, Path("clipped.osm.pbf"), (9.5, 46.3, 17.2, 49.0))
@@ -143,7 +143,7 @@ osm.filter_for_otp(raw, Path("filtered.osm.pbf"))
 
 raw_gtfs = gtfs.download_all_feed(config.gtfs_feeds)       # {name: data/raw/gtfs/<file>}
 preprocessed = gtfs.preprocess_all_feeds(raw_gtfs)         # {name: data/preprocess/<name>.preprocessed.gtfs.zip}
-ready = gtfs.clip_all_feeds(preprocessed, bbox=config.bbox)  # {name: data/otp/<name>.ready.gtfs.zip}
+ready = gtfs.clip_all_feeds(preprocessed, bbox=config.bbox)  # {name: data/ready/<name>.ready.gtfs.zip}
 ```
 
 ### Adding a new GTFS source
@@ -151,7 +151,7 @@ ready = gtfs.clip_all_feeds(preprocessed, bbox=config.bbox)  # {name: data/otp/<
 Write a function that downloads the feed and returns its path, and register it under a provider name. Nothing else needs to change.
 
 ```python
-from otpmill.gtfs import register_provider
+from graphmill.gtfs import register_provider
 
 @register_provider("my_portal")
 def my_portal(feed_name, feed, overwrite=False):
@@ -175,7 +175,7 @@ data/
 │   └── gtfs/<feed>.gtfs.zip                # original GTFS downloads
 ├── preprocess/
 │   └── <feed>.preprocessed.gtfs.zip        # after country-specific preprocessing
-└── otp/                                    # <- point OTP at this folder
+└── ready/                                    # <- point OTP/MOTIS at this folder
     ├── <country>.osm.pbf                   # filtered (and clipped) OSM
     └── <feed>.ready.gtfs.zip               # preprocessed and clipped GTFS
 ```
