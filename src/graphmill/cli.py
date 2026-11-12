@@ -1,7 +1,13 @@
 import typer
-from .config import load_config
-from .gtfs import process as process_gtfs
-from .osm import SUPPORTED_COUNTRIES, process as process_osm
+from pathlib import Path
+from functools import reduce
+
+from transitforge import TransitRouteNetwork
+from gtfsmith import filter_gtfs_per_mode
+
+from .config import load_config, READY_DIR, RAW_OSM_DIR, NETWORK_DIR
+from .gtfs import process as process_gtfs, add_shapes as add_gtfs_shapes
+from .osm import SUPPORTED_COUNTRIES, process as process_osm, extract_pt_network
 
 app = typer.Typer(help="Download and preprocess data for OpenTripPlanner.")
 
@@ -115,15 +121,6 @@ def gtfs(
 
     # Process feeds
     names = feed or list(config.gtfs_feeds)
-    invalid = set(names) - set(config.gtfs_feeds)
-    if invalid:
-        raise typer.BadParameter("Unknown GTFS feed(s): " + ", ".join(sorted(invalid)) + ". Configured: " + ", ".join(sorted(config.gtfs_feeds)))
-
-    selected_feeds = {
-        name: config.gtfs_feeds[name]
-        for name in names
-    }
-    
     typer.echo("Processing GTFS feeds: " + ", ".join(names))
     gtfs_files = process_gtfs(selected_feeds, bbox=bbox, overwrite=overwrite)
 
@@ -175,6 +172,77 @@ def all_data(
     typer.echo("\n=== GTFS ===")
     process_gtfs(config.gtfs_feeds, bbox=_parse_bbox(bbox) or config.bbox, overwrite=overwrite)
 
+
+@app.command(name="add-shapes")
+def add_shapes_command(
+    feed: list[str] = typer.Option(..., "--feed", "-f", help="GTFS feed name. Can be specified multiple times."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Print the shape-generation report."),
+):
+    config = load_config()
+
+    unknown = set(feed) - set(config.gtfs_feeds)
+    if unknown:
+        raise typer.BadParameter(f"Unknown GTFS feeds: {', '.join(sorted(unknown))}")
+
+    network_cache: dict[Path, TransitRouteNetwork] = {}
+
+    for name in feed:
+        cfg = config.gtfs_feeds[name]
+
+        if cfg.shapes_network is None:
+            raise typer.BadParameter(f"No shapes_network configured for GTFS feed '{name}'.")
+
+        ready_file = READY_DIR / cfg.output_filename.replace(".gtfs.zip", ".ready.gtfs.zip")
+
+        if not ready_file.is_file():
+            raise typer.BadParameter(f"Ready GTFS file not found for '{name}': {ready_file}")
+
+        typer.echo(f"\n[{name}] Generating GTFS shapes.")
+
+        network = _load_networks(cfg.shapes_network, network_cache)
+
+        add_gtfs_shapes(ready_file, network, verbose=verbose, name=name)
+
+
+@app.command("filter-gtfs")
+def filter_gtfs_for_mode(
+    feed: list[str] = typer.Option(..., "--feed", "-f", help="GTFS feed name. Can be specified multiple times.",),
+    mode: list[int] = typer.Option(..., "--mode", "-m", help="GTFS route type to keep. Can be specified multiple times.",),
+):
+    """Filter ready GTFS feeds by one or more route types."""
+    cfg = load_config()
+
+    # Validate feed names
+    unknown_feeds = set(feed) - set(cfg.gtfs_feeds)
+    if unknown_feeds:
+        raise typer.BadParameter(f"Unknown GTFS feed(s): {', '.join(sorted(unknown_feeds))}")
+
+    # Validate route types
+    if not mode:
+        raise typer.BadParameter("At least one route type must be specified.")
+
+    # Process each selected feed
+    for feed_name in feed:
+        typer.echo(f"Filtering GTFS feed '{feed_name}' for route type(s): {', '.join(map(str, mode))}")
+
+        feed_config = cfg.gtfs_feeds[feed_name]
+
+        # Resolve the ready GTFS file
+        output_filename = feed_config.output_filename
+        ready_filename = output_filename.removesuffix(".gtfs.zip") + ".ready.gtfs.zip"
+        ready_path = READY_DIR / ready_filename
+
+        if not ready_path.is_file():
+            raise typer.BadParameter(f"Ready GTFS feed not found: {ready_path}")
+
+        # Filter the feed
+        output_path = READY_DIR / (
+            ready_filename.removesuffix(".ready.gtfs.zip") + "_filtered.gtfs.zip"
+        )
+
+        filter_gtfs_per_mode(gtfs=ready_path, route_types=mode, output_path=output_path)
+
+        typer.echo(f"Saved filtered feed to: {output_path}")
 
 if __name__ == "__main__":
     app()
