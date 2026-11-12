@@ -20,6 +20,61 @@ def _parse_bbox(value: str | None) -> tuple[float, float, float, float] | None:
         raise typer.BadParameter("bbox values must be numbers")
 
 
+def _load_one_network(
+    country: str,
+) -> TransitRouteNetwork:
+
+    pkl_path = NETWORK_DIR / f"{country}.pkl"
+    osm_path = RAW_OSM_DIR / f"{country}.osm.pbf"
+
+    # Reuse an existing extracted network.
+    if pkl_path.is_file():
+        typer.echo(f"[{country}] Loading cached PT network.")
+        return TransitRouteNetwork.load(pkl_path)
+
+    # Otherwise, extract it from the original OSM file.
+    if not osm_path.is_file():
+        raise typer.BadParameter(
+            f"OSM extract not found: {osm_path}. "
+            "Run the OSM download command first."
+        )
+
+    typer.echo(f"[{country}] Extracting PT network from OSM.")
+    network = extract_pt_network(osm_path)
+
+    NETWORK_DIR.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"[{country}] Saving PT network: {pkl_path}")
+    network.save(pkl_path)
+
+    return network
+
+
+def _load_networks(
+    countries: str | list[str],
+    cache: dict[str, TransitRouteNetwork],
+) -> TransitRouteNetwork:
+
+    if isinstance(countries, str):
+        countries = [countries]
+
+    networks = []
+
+    for country in countries:
+        if country not in cache:
+            cache[country] = _load_one_network(country)
+
+        networks.append(cache[country])
+
+    if len(networks) == 1:
+        return networks[0]
+
+    return reduce(
+        lambda merged, net: merged.merge(net, verbose=False),
+        networks,
+    )
+
+
 @app.command()
 def osm(
     country: list[str] = typer.Option(None, "--country", "-c", help="Country to download. Can be specified multiple times."),
