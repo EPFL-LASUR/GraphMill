@@ -10,9 +10,11 @@ requires-python = ">=3.13"
 dependencies = [
     "dataclasses>=0.8",
     "datetime>=6.0",
+    "geopy>=2.5.0",
     "gtfsmith",
     "httpx>=0.28.1",
     "osmium>=4.3.1",
+    "pandas>=3.1.1",
     "pathlib>=1.0.1",
     "rich>=15.0.0",
     "tqdm>=4.70.1",
