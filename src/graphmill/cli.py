@@ -93,12 +93,27 @@ def osm(
 
 @app.command()
 def gtfs(
-    feed: list[str] = typer.Option(None, "--feed", "-f", help="GTFS feed to download, as named in config.toml. Can be specified multiple times."),
-    overwrite: bool = typer.Option(False, "--overwrite", "-o", help="Re-download even if the raw file already exists."),
-    bbox: str = BBOX_OPTION
+    feed: list[str] = typer.Option(None, "--feed", "-f", help="GTFS feed name. Can be specified multiple times."),
+    bbox: str | None = BBOX_OPTION,
+    shapes: bool = typer.Option(False, "--shapes", help="Generate GTFS shapes after preprocessing."),
+    shape_feed: list[str] | None = typer.Option(None, "--shape-feed", help="Selected feed to generate shapes for. Can be specified multiple times."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Print the shape-generation report."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-o", help="Re-download and reprocess feeds."),
 ):
-    """Download configured GTFS feed(s)."""
     config = load_config()
+    bbox = _parse_bbox(bbox) if bbox is not None else config.bbox
+
+    # Select GTFS feeds.
+    if feed:
+        unknown = set(feed) - set(config.gtfs_feeds)
+        if unknown:
+            raise typer.BadParameter(f"Unknown GTFS feeds: {', '.join(sorted(unknown))}")
+
+        selected_feeds = {name: config.gtfs_feeds[name] for name in feed}
+    else:
+        selected_feeds = config.gtfs_feeds
+
+    # Process feeds
     names = feed or list(config.gtfs_feeds)
     invalid = set(names) - set(config.gtfs_feeds)
     if invalid:
@@ -110,7 +125,40 @@ def gtfs(
     }
     
     typer.echo("Processing GTFS feeds: " + ", ".join(names))
-    process_gtfs(selected_feeds, bbox=_parse_bbox(bbox) or config.bbox, overwrite=overwrite,)
+    gtfs_files = process_gtfs(selected_feeds, bbox=bbox, overwrite=overwrite)
+
+    # Stop here if shapes are not requested.
+    if not shapes:
+        return
+
+    # Determine which feeds should receive shapes.
+    if shape_feed:
+        unknown = set(shape_feed) - set(selected_feeds)
+        if unknown:
+            raise typer.BadParameter(f"Shape feeds must be among the selected GTFS feeds: {', '.join(sorted(unknown))}")
+
+        feeds_to_shape = shape_feed
+    else:
+        feeds_to_shape = [name for name, cfg in selected_feeds.items() if cfg.shapes_network is not None]
+
+    if not feeds_to_shape:
+        typer.echo("No feeds configured for shape generation.")
+        return
+
+    # Reuse loaded networks.
+    network_cache: dict[Path, TransitRouteNetwork] = {}
+
+    for name in feeds_to_shape:
+        cfg = selected_feeds[name]
+
+        if cfg.shapes_network is None:
+            raise typer.BadParameter(f"No shapes_network configured for GTFS feed '{name}'.")
+
+        typer.echo(f"\n[{name}] Generating GTFS shapes.")
+
+        network = _load_networks(cfg.shapes_network, network_cache)
+
+        add_gtfs_shapes(gtfs_files[name], network, verbose=verbose, name=name)
 
 
 
