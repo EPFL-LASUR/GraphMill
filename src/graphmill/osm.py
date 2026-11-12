@@ -140,6 +140,25 @@ def filter_for_otp(input_file: Path, output_file: Path) -> Path:
     )
     return output_file
 
+def extract_pt_network(osm_pbf: str | Path):
+    """
+    Extract the public transport network from an osm.pbf file and save it as a pickle.
+    
+    This pickle can then be used to reconstruct the shapes.txt file of a GTFS feed with
+    the function add_shapes().
+    """
+
+    builder = TransitRouteBuilder(osm_pbf)
+
+    network = builder.build()
+
+    name = Path(osm_pbf).name.removesuffix(".osm.pbf")
+    output_file = NETWORK_DIR / f"{name}.pkl"
+
+    network.save(output_file)
+
+    return network
+
 
 def process(
     countries: list[str],
