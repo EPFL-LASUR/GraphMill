@@ -7,9 +7,11 @@ CONFIG_FILE = PROJECT_ROOT / "config" / "config.toml"
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
 PREPROCESS_DIR = DATA_DIR / "preprocess"
-OTP_DIR = DATA_DIR / "ready"
+READY_DIR = DATA_DIR / "ready"
 RAW_OSM_DIR = RAW_DIR / "osm"
 RAW_GTFS_DIR = RAW_DIR / "gtfs"
+NETWORK_DIR = DATA_DIR / "network"
+REPORT_DIR = DATA_DIR / "report"
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,7 @@ class GtfsFeedConfig:
     provider: str
     output_filename: str
     options: dict = field(default_factory=dict)
+    shapes_network: str | list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -46,11 +49,23 @@ def load_config() -> Config:
     gtfs_feeds = {}
     for name, values in data.get("gtfs", {}).items():
         values = dict(values)
+
         provider = values.pop("provider", None)
         if not provider:
             raise ValueError(f"gtfs.{name} is missing a 'provider' key")
         output_filename = values.pop("output_filename", f"{name}.gtfs.zip")
-        gtfs_feeds[name] = GtfsFeedConfig(provider=provider, output_filename=output_filename, options=values)
+
+        shapes_network = values.pop("shapes_network", None)
+        if shapes_network is not None:
+                names = [shapes_network] if isinstance(shapes_network, str) else shapes_network
+                if (
+                    not isinstance(names, list)
+                    or not names
+                    or not all(isinstance(n, str) and n for n in names)
+                ):
+                    raise ValueError(f"gtfs.{name}.shapes_network must be a non-empty string or list of strings, got {shapes_network!r}")
+
+        gtfs_feeds[name] = GtfsFeedConfig(provider=provider, output_filename=output_filename, options=values, shapes_network=shapes_network)
 
     return Config(
         osm_countries=osm["countries"],
