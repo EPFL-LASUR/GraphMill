@@ -62,10 +62,12 @@ def dirs(tmp_path, monkeypatch):
         raw=tmp_path / "raw" / "gtfs",
         pre=tmp_path / "preprocess",
         ready=tmp_path / "ready",
+        report=tmp_path / "report"
     )
     monkeypatch.setattr(g, "RAW_GTFS_DIR", d.raw)
     monkeypatch.setattr(g, "PREPROCESS_DIR", d.pre)
-    monkeypatch.setattr(g, "OTP_DIR", d.ready)
+    monkeypatch.setattr(g, "READY_DIR", d.ready)
+    monkeypatch.setattr(g, "REPORT_DIR", d.report)
     return d
 
 

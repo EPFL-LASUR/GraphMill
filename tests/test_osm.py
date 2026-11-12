@@ -45,7 +45,7 @@ def dirs(tmp_path, monkeypatch):
     raw = tmp_path / "raw" / "osm"
     ready = tmp_path / "ready"
     monkeypatch.setattr(osm, "RAW_OSM_DIR", raw)
-    monkeypatch.setattr(osm, "OTP_DIR", ready)
+    monkeypatch.setattr(osm, "READY_DIR", ready)
     return raw, ready
 
 

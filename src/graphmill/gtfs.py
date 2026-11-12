@@ -16,7 +16,9 @@ from gtfsmith import (
     create_parent_stations
     )
 
-from .config import RAW_GTFS_DIR, OTP_DIR, PREPROCESS_DIR, GtfsFeedConfig
+from transitforge import TransitRouteNetwork
+
+from .config import RAW_GTFS_DIR, READY_DIR, PREPROCESS_DIR, REPORT_DIR, GtfsFeedConfig
 from .helpers import get_coordinates
 
 CKAN_API = "https://ckan.opendata.swiss/api/3/action"
@@ -246,14 +248,14 @@ def clip_all_feeds(
     bbox: tuple[float, float, float, float] | None = None,
     overwrite: bool = False,
 ) -> dict[str, Path]:
-    """Clip all downloaded GTFS feeds and save them in OTP_DIR."""
+    """Clip all downloaded GTFS feeds and save them in READY_DIR."""
 
-    OTP_DIR.mkdir(parents=True, exist_ok=True)
+    READY_DIR.mkdir(parents=True, exist_ok=True)
 
     clipped_files: dict[str, Path] = {}
 
     for name, raw_file in raw_files.items():
-        output_file = OTP_DIR / f"{name}.ready.gtfs.zip"
+        output_file = READY_DIR / f"{name}.ready.gtfs.zip"
 
         if output_file.exists() and not overwrite:
             print(f"[{name}] Already clipped: {output_file}")
@@ -362,7 +364,7 @@ def preprocess_austria(gtfs: GTFS) -> GTFS:
 def preprocess_belgium(gtfs: GTFS) -> GTFS:
     """Preprocess the Belgian GTFS feed."""
 
-    print("[belguim] Adding prefix to stop IDs")
+    print("[belgium] Adding prefix to stop IDs")
     gtfs = prefix_stop_ids(gtfs, "BE")
 
     return gtfs
@@ -432,10 +434,10 @@ def process(
     Files are stored in the following locations:
     - RAW_GTFS_DIR: original downloads
     - PREPROCESS_DIR: clipped feeds
-    - OTP_DIR: preprocessed feeds and the final merged feed
+    - READY_DIR: preprocessed feeds and the final merged feed
     """
 
-    OTP_DIR.mkdir(parents=True, exist_ok=True)
+    READY_DIR.mkdir(parents=True, exist_ok=True)
 
     print("Downloading GTFS feeds")
     raw_files = download_all_feed(feeds, overwrite=overwrite)
@@ -450,7 +452,7 @@ def process(
         raise ValueError("No GTFS feeds were provided.")
 
     # print("Merging GTFS feeds")
-    # output_file = OTP_DIR / "merged.gtfs.zip"
+    # output_file = READY_DIR / "merged.gtfs.zip"
 
     # files_to_merge = list(ready_files.values())
 

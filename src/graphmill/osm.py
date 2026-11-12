@@ -3,7 +3,9 @@ import subprocess
 import httpx
 from tqdm import tqdm
 
-from .config import RAW_OSM_DIR, OTP_DIR
+from transitforge import TransitRouteBuilder, TransitRouteNetwork
+
+from .config import RAW_OSM_DIR, READY_DIR, NETWORK_DIR
 
 GEOFABRIK_BASE_URL = "https://download.geofabrik.de/europe"
 SUPPORTED_COUNTRIES = {"switzerland", "france", "germany", "italy", "liechtenstein", "austria", "netherlands", "spain", "belgium", "luxembourg"}
@@ -146,7 +148,7 @@ def process(
 ) -> list[Path]:
     """
     Wrapper to download and filter the OSM files for all countries, writing
-    one filtered .osm.pbf per country straight into OTP_DIR.
+    one filtered .osm.pbf per country straight into READY_DIR.
 
     OTP2 scans its data directory and loads every .osm.pbf file it finds, so
     there is no need to merge the per-country files into one — as long as
@@ -160,7 +162,7 @@ def process(
     download_country); the filter/clip steps always re-run regardless, since
     they're cheap relative to the download.
     """
-    OTP_DIR.mkdir(parents=True, exist_ok=True)
+    READY_DIR.mkdir(parents=True, exist_ok=True)
     raw_files = download(countries, overwrite=overwrite)
 
     outputs = []
@@ -171,7 +173,7 @@ def process(
             clipped_file = raw_file.with_name(f"{country}.clipped.osm.pbf")
             working_file = clip_to_bbox(raw_file, clipped_file, bbox)
 
-        output_file = OTP_DIR / f"{country}.osm.pbf"
+        output_file = READY_DIR / f"{country}.osm.pbf"
         filter_for_otp(working_file, output_file)
         outputs.append(output_file)
 

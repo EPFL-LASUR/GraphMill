@@ -41,7 +41,7 @@ class TestPaths:
         assert cfg.DATA_DIR == cfg.PROJECT_ROOT / "data"
         assert cfg.RAW_DIR == cfg.DATA_DIR / "raw"
         assert cfg.PREPROCESS_DIR == cfg.DATA_DIR / "preprocess"
-        assert cfg.OTP_DIR == cfg.DATA_DIR / "ready"
+        assert cfg.READY_DIR == cfg.DATA_DIR / "ready"
         assert cfg.RAW_OSM_DIR == cfg.RAW_DIR / "osm"
         assert cfg.RAW_GTFS_DIR == cfg.RAW_DIR / "gtfs"
 
