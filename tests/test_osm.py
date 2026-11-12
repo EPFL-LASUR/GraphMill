@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from pathlib import Path
+from types import SimpleNamespace
 
 from graphmill import osm
+
+from transitforge import TransitRouteNetwork
+from transitforge.dataclasses import TransitRoute, TransitStop
 
 
 # ---------------------------------------------------------------------------
@@ -361,3 +366,165 @@ class TestProcess:
 
     def test_empty_country_list(self, pipeline):
         assert osm.process([]) == []
+
+# ---------------------------------------------------------------------------
+# extract_pt_network
+# ---------------------------------------------------------------------------
+def make_network(*relation_ids: int) -> TransitRouteNetwork:
+    return TransitRouteNetwork(
+        {
+            rid: TransitRoute(
+                relation_id=rid,
+                route_type="bus",
+                ref="12",
+                stops=[TransitStop(rid * 10, 46.0, 7.0, "A")],
+            )
+            for rid in relation_ids
+        }
+    )
+
+
+class TestExtractPtNetwork:
+    @pytest.fixture
+    def env(self, tmp_path, monkeypatch):
+        """Fake TransitRouteBuilder; NETWORK_DIR redirected into tmp_path."""
+        network_dir = tmp_path / "networks"
+        monkeypatch.setattr(osm, "NETWORK_DIR", network_dir)
+
+        events = []  # call order: "build", "save"
+        state = SimpleNamespace(
+            network_dir=network_dir,
+            events=events,
+            builders=[],
+            saved=[],
+            network=make_network(1),
+            build_error=None,
+            save_error=None,
+        )
+
+        def fake_save(path):
+            events.append("save")
+            if state.save_error:
+                raise state.save_error
+            state.saved.append(path)
+
+        state.network.save = fake_save
+
+        class FakeBuilder:
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+                state.builders.append(self)
+
+            def build(self):
+                events.append("build")
+                if state.build_error:
+                    raise state.build_error
+                return state.network
+
+        monkeypatch.setattr(osm, "TransitRouteBuilder", FakeBuilder)
+        return state
+
+    # -- builder ---------------------------------------------------------
+
+    @pytest.mark.parametrize("as_type", [Path, str])
+    def test_builder_receives_the_pbf_path(self, env, tmp_path, as_type):
+        pbf = tmp_path / "switzerland.osm.pbf"
+
+        osm.extract_pt_network(as_type(pbf))
+
+        (builder,) = env.builders
+        assert builder.args == (as_type(pbf),)
+
+    def test_builder_uses_default_route_types(self, env, tmp_path):
+        osm.extract_pt_network(tmp_path / "switzerland.osm.pbf")
+
+        assert env.builders[0].kwargs == {}
+
+    def test_build_is_called_exactly_once(self, env, tmp_path):
+        osm.extract_pt_network(tmp_path / "switzerland.osm.pbf")
+
+        assert env.events.count("build") == 1
+
+    def test_returns_the_built_network(self, env, tmp_path):
+        result = osm.extract_pt_network(tmp_path / "switzerland.osm.pbf")
+
+        assert result is env.network
+
+    # -- output file -------------------------------------------------------
+
+    @pytest.mark.parametrize("as_type", [Path, str])
+    def test_saves_in_network_dir_named_after_the_pbf(
+        self, env, tmp_path, as_type
+    ):
+        osm.extract_pt_network(as_type(tmp_path / "switzerland.osm.pbf"))
+
+        assert env.saved == [env.network_dir / "switzerland.pkl"]
+
+    def test_output_goes_to_network_dir_not_next_to_the_pbf(self, env, tmp_path):
+        pbf = tmp_path / "raw" / "osm" / "france.osm.pbf"
+
+        osm.extract_pt_network(pbf)
+
+        assert env.saved[0].parent == env.network_dir
+
+    def test_only_the_osm_pbf_suffix_is_removed(self, env, tmp_path):
+        osm.extract_pt_network(tmp_path / "france.latest.osm.pbf")
+
+        assert env.saved == [env.network_dir / "france.latest.pkl"]
+
+    def test_name_with_underscores_is_kept(self, env, tmp_path):
+        osm.extract_pt_network(tmp_path / "grand_lausanne.osm.pbf")
+
+        assert env.saved == [env.network_dir / "grand_lausanne.pkl"]
+
+    def test_file_without_the_osm_pbf_suffix_keeps_its_full_name(
+        self, env, tmp_path
+    ):
+        # Documents current behaviour: the suffix is only removed if present.
+        osm.extract_pt_network(tmp_path / "switzerland.pbf")
+
+        assert env.saved == [env.network_dir / "switzerland.pbf.pkl"]
+
+    def test_saves_after_building(self, env, tmp_path):
+        osm.extract_pt_network(tmp_path / "switzerland.osm.pbf")
+
+        assert env.events == ["build", "save"]
+
+    # -- failures ----------------------------------------------------------
+
+    def test_build_failure_propagates_and_nothing_is_saved(self, env, tmp_path):
+        env.build_error = RuntimeError("osmium missing")
+
+        with pytest.raises(RuntimeError, match="osmium missing"):
+            osm.extract_pt_network(tmp_path / "switzerland.osm.pbf")
+
+        assert env.events == ["build"]
+        assert env.saved == []
+
+    def test_save_failure_propagates(self, env, tmp_path):
+        env.save_error = OSError("disk full")
+
+        with pytest.raises(OSError, match="disk full"):
+            osm.extract_pt_network(tmp_path / "switzerland.osm.pbf")
+
+    # -- real save (no fake network) -----------------------------------------
+
+    def test_pickle_is_written_and_loadable(self, env, tmp_path, monkeypatch):
+        # Use a real network so the real save() runs, including the
+        # creation of the not-yet-existing NETWORK_DIR.
+        real = make_network(1, 2)
+        monkeypatch.setattr(
+            osm.TransitRouteBuilder, "build", lambda self: real
+        )
+        assert not env.network_dir.exists()
+
+        result = osm.extract_pt_network(tmp_path / "italy.osm.pbf")
+
+        pkl = env.network_dir / "italy.pkl"
+        assert result is real
+        assert pkl.is_file()
+
+        loaded = TransitRouteNetwork.load(pkl)
+        assert set(loaded.routes) == {1, 2}
+        assert loaded.by_ref["12"] == [1, 2]
