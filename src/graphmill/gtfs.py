@@ -4,16 +4,19 @@ from datetime import date
 from pathlib import Path
 from typing import Callable
 from tqdm import tqdm
+import pandas as pd
 import re
 import httpx
 import shutil
 import time
+from rich.console import Console
+from rich.table import Table
 
 
 from gtfsmith import (
-    GTFS, filter_gtfs_per_bbox, merge_multiple_gtfs, normalize_swiss_routes,
+    GTFS, GTFSShapeBuilder, filter_gtfs_per_bbox, merge_multiple_gtfs, normalize_swiss_routes,
     merge_duplicated_physical_stops, prefix_stop_ids, add_missing_parent_station, 
-    create_parent_stations
+    create_parent_stations, filter_gtfs_per_mode
     )
 
 from transitforge import TransitRouteNetwork
@@ -420,6 +423,61 @@ def preprocess_all_feeds(
         ready_files[name] = output_file
 
     return ready_files
+
+def add_shapes(feed: Path | GTFS | str, network: TransitRouteNetwork, verbose: bool = False, name: str | None = None):
+
+    if isinstance(feed, GTFS):
+        gtfs = feed
+        name = name or "feed"
+    else:
+        feed = Path(feed)
+        gtfs = GTFS.from_zip(feed)
+        name = feed.name.removesuffix(".gtfs.zip")
+    
+    builder = GTFSShapeBuilder(gtfs, network, diagnose=verbose)
+
+    gtfs = builder.build()
+
+    if verbose:
+        report = builder.report
+
+        console = Console()
+
+        # Summary
+        summary = Table(title="Shape Generation Summary")
+        summary.add_column("Failure reason", style="cyan")
+        summary.add_column("Count", justify="right")
+
+        for reason, count in report["reason"].value_counts().items():
+            summary.add_row(str(reason), str(count))
+
+        console.print(summary)
+
+        # Detailed report
+        table = Table(title="Routes Without Shapes", show_lines=True)
+
+        for column in ["route_id", "gtfs_ref", "route_type", "reason", "fail_stop"]:
+            table.add_column(column.replace("_", " ").title())
+
+        for _, row in report.iterrows():
+            table.add_row(
+                str(row["route_id"]),
+                str(row["gtfs_ref"]),
+                str(row["route_type"]),
+                str(row["reason"]),
+                str(row["fail_stop"]) if pd.notna(row["fail_stop"]) else "-"
+            )
+
+        console.print(table)
+
+        REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        report.to_csv(REPORT_DIR / f"{name}_shapes_report.csv", index=False)
+
+    READY_DIR.mkdir(parents=True, exist_ok=True)
+    output_file = READY_DIR / f"{name}_with_shapes.gtfs.zip"
+    gtfs.export_gtfs(output_file)
+    
+    return gtfs
 
 
 
