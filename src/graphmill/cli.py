@@ -244,5 +244,40 @@ def filter_gtfs_for_mode(
 
         typer.echo(f"Saved filtered feed to: {output_path}")
 
+@app.command(name="extract-network")
+def extract_network(
+    country: list[str] = typer.Option(None, "--country", "-c", help="Country (OSM extract name) to extract. Can be specified multiple times. Defaults to osm.countries in config.toml."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-o", help="Re-extract even if the network pickle already exists.")
+):
+    """Extract the public transport network of OSM extracts and save it as a pickle."""
+    config = load_config()
+
+    # Drop duplicates, keep the given order.
+    countries = list(dict.fromkeys(country or config.osm_countries))
+
+    to_extract = [
+        c for c in countries
+        if overwrite or not (NETWORK_DIR / f"{c}.pkl").is_file()
+    ]
+
+    # Fail before any (slow) extraction starts.
+    missing = [c for c in to_extract if not (RAW_OSM_DIR / f"{c}.osm.pbf").is_file()]
+    if missing:
+        raise typer.BadParameter(
+            "OSM extract not found for: " + ", ".join(missing)
+            + f" (expected in {RAW_OSM_DIR}). Run the OSM download command first."
+        )
+
+    for name in countries:
+        pkl_path = NETWORK_DIR / f"{name}.pkl"
+
+        if name not in to_extract:
+            typer.echo(f"[{name}] Already extracted: {pkl_path}")
+            continue
+
+        typer.echo(f"[{name}] Extracting PT network from OSM.")
+        extract_pt_network(RAW_OSM_DIR / f"{name}.osm.pbf")
+        typer.echo(f"[{name}] Saved PT network: {pkl_path}")
+
 if __name__ == "__main__":
     app()
