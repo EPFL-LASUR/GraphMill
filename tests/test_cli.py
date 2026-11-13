@@ -316,7 +316,7 @@ class TestApp:
     def test_help_lists_commands(self):
         result = runner.invoke(cli.app, ["--help"])
         assert result.exit_code == 0
-        for command in ("osm", "gtfs", "all", "add-shapes", "filter-gtfs"):
+        for command in ("osm", "gtfs", "all", "add-shapes", "filter-gtfs", "extract-network"):
             assert command in result.output
 
     def test_unknown_command_fails(self):
@@ -785,3 +785,181 @@ class TestFilterGtfsCommand:
         assert "Filtering GTFS feed 'france' for route type(s): 2, 3" in result.output
         assert "Saved filtered feed to:" in result.output
         assert "france_filtered.gtfs.zip" in result.output
+
+
+# ---------------------------------------------------------------------------
+# extract-network
+# ---------------------------------------------------------------------------
+class TestExtractNetworkCommand:
+    @pytest.fixture
+    def extract(self, mocks, dirs, monkeypatch):
+        mock = MagicMock()
+        monkeypatch.setattr(cli, "extract_pt_network", mock)
+
+        def pbf(*names):
+            for name in names:
+                (dirs.osm / f"{name}.osm.pbf").write_bytes(b"")
+
+        def pkl(*names):
+            dirs.network.mkdir(exist_ok=True)
+            for name in names:
+                (dirs.network / f"{name}.pkl").write_bytes(b"")
+
+        return SimpleNamespace(mock=mock, dirs=dirs, config=mocks.config, pbf=pbf, pkl=pkl)
+
+    def extracted(self, extract):
+        return [c.args[0].name for c in extract.mock.call_args_list]
+
+    # -- selection -------------------------------------------------------
+
+    def test_uses_config_countries_by_default(self, extract):
+        extract.pbf("switzerland", "france")
+
+        result = runner.invoke(cli.app, ["extract-network"])
+
+        assert result.exit_code == 0, result.output
+        assert self.extracted(extract) == ["switzerland.osm.pbf", "france.osm.pbf"]
+
+    def test_country_option_overrides_config(self, extract):
+        extract.pbf("italy", "austria")
+
+        result = runner.invoke(cli.app, ["extract-network", "--country", "italy", "-c", "austria"])
+
+        assert result.exit_code == 0, result.output
+        assert self.extracted(extract) == ["italy.osm.pbf", "austria.osm.pbf"]
+
+    def test_pbf_path_comes_from_raw_osm_dir(self, extract):
+        extract.pbf("italy")
+
+        runner.invoke(cli.app, ["extract-network", "-c", "italy"])
+
+        extract.mock.assert_called_once_with(extract.dirs.osm / "italy.osm.pbf")
+
+    def test_duplicate_countries_are_extracted_once(self, extract):
+        extract.pbf("italy")
+
+        runner.invoke(cli.app, ["extract-network", "-c", "italy", "-c", "italy"])
+
+        assert extract.mock.call_count == 1
+
+    def test_given_order_is_kept(self, extract):
+        extract.pbf("italy", "austria", "france")
+
+        runner.invoke(cli.app, ["extract-network", "-c", "france", "-c", "italy", "-c", "austria"])
+
+        assert self.extracted(extract) == ["france.osm.pbf", "italy.osm.pbf", "austria.osm.pbf"]
+
+    def test_custom_extracts_are_not_limited_to_supported_countries(self, extract):
+        extract.pbf("grand_lausanne")
+
+        result = runner.invoke(cli.app, ["extract-network", "-c", "grand_lausanne"])
+
+        assert result.exit_code == 0, result.output
+        assert self.extracted(extract) == ["grand_lausanne.osm.pbf"]
+
+    # -- existing pickles / overwrite -------------------------------------------
+
+    def test_existing_pickle_is_skipped(self, extract):
+        extract.pbf("italy")
+        extract.pkl("italy")
+
+        result = runner.invoke(cli.app, ["extract-network", "-c", "italy"])
+
+        assert result.exit_code == 0, result.output
+        extract.mock.assert_not_called()
+        assert "[italy] Already extracted" in result.output
+
+    def test_only_missing_pickles_are_extracted(self, extract):
+        extract.pbf("italy", "austria")
+        extract.pkl("italy")
+
+        runner.invoke(cli.app, ["extract-network", "-c", "italy", "-c", "austria"])
+
+        assert self.extracted(extract) == ["austria.osm.pbf"]
+
+    def test_skipped_country_does_not_need_its_pbf(self, extract):
+        extract.pkl("italy")  # pickle exists, no PBF on disk
+
+        result = runner.invoke(cli.app, ["extract-network", "-c", "italy"])
+
+        assert result.exit_code == 0, result.output
+        extract.mock.assert_not_called()
+
+    @pytest.mark.parametrize("flag", ["--overwrite", "-o"])
+    def test_overwrite_reextracts_existing_pickles(self, extract, flag):
+        extract.pbf("italy")
+        extract.pkl("italy")
+
+        result = runner.invoke(cli.app, ["extract-network", "-c", "italy", flag])
+
+        assert result.exit_code == 0, result.output
+        assert self.extracted(extract) == ["italy.osm.pbf"]
+        assert "Already extracted" not in result.output
+
+    def test_overwrite_requires_the_pbf(self, extract):
+        extract.pkl("italy")  # pickle but no PBF
+
+        result = runner.invoke(cli.app, ["extract-network", "-c", "italy", "-o"])
+
+        assert result.exit_code == 2
+        extract.mock.assert_not_called()
+
+    # -- missing PBF -------------------------------------------------------------
+
+    def test_missing_pbf_is_rejected(self, extract):
+        result = runner.invoke(cli.app, ["extract-network", "-c", "atlantis"])
+
+        assert result.exit_code == 2
+        assert "atlantis" in result.output
+        assert "not found" in result.output
+        extract.mock.assert_not_called()
+
+    def test_missing_pbf_is_detected_before_any_extraction(self, extract):
+        extract.pbf("italy")  # valid, and listed first
+
+        result = runner.invoke(cli.app, ["extract-network", "-c", "italy", "-c", "atlantis"])
+
+        assert result.exit_code == 2
+        extract.mock.assert_not_called()
+
+    def test_all_missing_countries_are_reported(self, extract):
+        result = runner.invoke(cli.app, ["extract-network", "-c", "atlantis", "-c", "narnia"])
+
+        assert result.exit_code == 2
+        assert "atlantis" in result.output
+        assert "narnia" in result.output
+
+    def test_default_countries_without_pbf_are_rejected(self, extract):
+        result = runner.invoke(cli.app, ["extract-network"])
+
+        assert result.exit_code == 2
+        extract.mock.assert_not_called()
+
+    # -- output / failures ---------------------------------------------------------
+
+    def test_echoes_progress_per_country(self, extract):
+        extract.pbf("italy")
+
+        result = runner.invoke(cli.app, ["extract-network", "-c", "italy"])
+
+        assert "[italy] Extracting PT network from OSM." in result.output
+        assert "[italy] Saved PT network:" in result.output
+        assert "italy.pkl" in result.output
+
+    def test_extraction_failure_stops_the_remaining_countries(self, extract):
+        extract.pbf("italy", "austria")
+        extract.mock.side_effect = RuntimeError("osmium missing")
+
+        result = runner.invoke(cli.app, ["extract-network", "-c", "italy", "-c", "austria"])
+
+        assert result.exit_code != 0
+        assert isinstance(result.exception, RuntimeError)
+        assert extract.mock.call_count == 1
+
+    def test_does_not_run_osm_or_gtfs_processing(self, extract, mocks):
+        extract.pbf("italy")
+
+        runner.invoke(cli.app, ["extract-network", "-c", "italy"])
+
+        mocks.osm.assert_not_called()
+        mocks.gtfs.assert_not_called()
