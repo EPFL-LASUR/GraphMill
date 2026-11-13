@@ -8,6 +8,11 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+import io
+import re
+
+import pandas as pd
+from rich.console import Console
 
 import pytest
 
@@ -62,10 +67,12 @@ def dirs(tmp_path, monkeypatch):
         raw=tmp_path / "raw" / "gtfs",
         pre=tmp_path / "preprocess",
         ready=tmp_path / "ready",
+        report=tmp_path / "report"
     )
     monkeypatch.setattr(g, "RAW_GTFS_DIR", d.raw)
     monkeypatch.setattr(g, "PREPROCESS_DIR", d.pre)
-    monkeypatch.setattr(g, "OTP_DIR", d.ready)
+    monkeypatch.setattr(g, "READY_DIR", d.ready)
+    monkeypatch.setattr(g, "REPORT_DIR", d.report)
     return d
 
 
@@ -746,3 +753,229 @@ class TestProcess:
         assert isinstance(result, dict)
         assert result == stages.clipped
         assert all(isinstance(p, Path) for p in result.values())
+
+
+# ---------------------------------------------------------------------------
+# add_shapes
+# ---------------------------------------------------------------------------
+NETWORK = object()  # add_shapes only forwards the network to the builder
+
+
+def render(renderable) -> str:
+    """Render a rich object to plain text (real Console, not g.Console)."""
+    buffer = io.StringIO()
+    Console(file=buffer, width=200, force_terminal=False).print(renderable)
+    return buffer.getvalue()
+
+
+def sample_report() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "route_id": ["r1", "r2", "r3"],
+            "gtfs_ref": ["IC1", "S2", "12"],
+            "route_type": ["RAIL", "RAIL", "BUS"],
+            "reason": ["STOP_TOO_FAR", "STOP_TOO_FAR", "NO_CANDIDATES"],
+            # object dtype keeps 3 as "3" (a float column would print "3.0")
+            "fail_stop": pd.Series([3, None, None], dtype=object),
+        }
+    )
+
+
+@pytest.fixture
+def shapes(dirs, fake_gtfs_class, monkeypatch):
+    """Fake GTFSShapeBuilder and rich Console; output dirs already exist."""
+    dirs.pre.mkdir(parents=True)
+    dirs.report.mkdir(parents=True)
+
+    state = SimpleNamespace(
+        builders=[],
+        consoles=[],
+        printed=[],
+        report=sample_report(),
+    )
+
+    class FakeBuilder:
+        def __init__(self, gtfs, network, diagnose=False):
+            self.gtfs = gtfs
+            self.network = network
+            self.diagnose = diagnose
+            self.report = state.report
+            self.result = g.GTFS()  # g.GTFS is FakeGTFS here
+            state.builders.append(self)
+
+        def build(self):
+            return self.result
+
+    class FakeConsole:
+        def __init__(self):
+            state.consoles.append(self)
+
+        def print(self, obj):
+            state.printed.append(obj)
+
+    monkeypatch.setattr(g, "GTFSShapeBuilder", FakeBuilder)
+    monkeypatch.setattr(g, "Console", FakeConsole)
+
+    state.log = fake_gtfs_class
+    return state
+
+
+class TestAddShapes:
+    # -- input handling ----------------------------------------------------
+
+    def test_gtfs_object_is_used_directly(self, shapes, dirs):
+        gtfs = g.GTFS()
+
+        g.add_shapes(gtfs, NETWORK)
+
+        assert shapes.log.loaded == []  # nothing read from disk
+        (builder,) = shapes.builders
+        assert builder.gtfs is gtfs
+        assert builder.network is NETWORK
+
+    def test_gtfs_object_defaults_to_feed_name(self, shapes, dirs):
+        g.add_shapes(g.GTFS(), NETWORK)
+
+        assert (dirs.ready / "feed_with_shapes.gtfs.zip").exists()
+
+    def test_gtfs_object_uses_given_name(self, shapes, dirs):
+        g.add_shapes(g.GTFS(), NETWORK, name="switzerland")
+
+        assert (dirs.ready / "switzerland_with_shapes.gtfs.zip").exists()
+        assert not (dirs.ready / "feed_with_shapes.gtfs.zip").exists()
+
+    @pytest.mark.parametrize("as_type", [Path, str])
+    def test_path_is_loaded_and_name_comes_from_file(
+        self, shapes, dirs, tmp_path, as_type
+    ):
+        source = tmp_path / "switzerland.gtfs.zip"
+
+        g.add_shapes(as_type(source), NETWORK)
+
+        assert shapes.log.loaded == [source]
+        assert (dirs.ready / "switzerland_with_shapes.gtfs.zip").exists()
+
+    def test_name_is_derived_from_the_full_stem(self, shapes, dirs, tmp_path):
+        g.add_shapes(tmp_path / "france.preprocessed.gtfs.zip", NETWORK)
+
+        assert (
+            dirs.ready / "france.preprocessed_with_shapes.gtfs.zip"
+        ).exists()
+
+    def test_name_argument_is_ignored_for_paths(self, shapes, dirs, tmp_path):
+        # Documents current behaviour: the file name always wins.
+        g.add_shapes(tmp_path / "ch.gtfs.zip", NETWORK, name="ignored")
+
+        assert (dirs.ready / "ch_with_shapes.gtfs.zip").exists()
+        assert not (dirs.ready / "ignored_with_shapes.gtfs.zip").exists()
+
+    # -- builder / output ----------------------------------------------------
+
+    def test_returns_and_exports_the_built_gtfs(self, shapes, dirs):
+        original = g.GTFS()
+
+        result = g.add_shapes(original, NETWORK)
+
+        (builder,) = shapes.builders
+        assert result is builder.result
+        assert result is not original
+
+        (exported, path), = shapes.log.exported
+        assert exported is builder.result
+        assert path == dirs.ready / "feed_with_shapes.gtfs.zip"
+
+    @pytest.mark.parametrize("verbose", [False, True])
+    def test_verbose_enables_builder_diagnostics(self, shapes, verbose):
+        g.add_shapes(g.GTFS(), NETWORK, verbose=verbose)
+
+        assert shapes.builders[0].diagnose is verbose
+
+    def test_not_verbose_by_default(self, shapes):
+        g.add_shapes(g.GTFS(), NETWORK)
+
+        assert shapes.builders[0].diagnose is False
+
+    # -- quiet mode ------------------------------------------------------------
+
+    def test_quiet_mode_prints_and_writes_no_report(self, shapes, dirs):
+        g.add_shapes(g.GTFS(), NETWORK, verbose=False)
+
+        assert shapes.consoles == []
+        assert shapes.printed == []
+        assert list(dirs.report.iterdir()) == []
+
+    # -- verbose report ------------------------------------------------------------
+
+    def test_verbose_prints_summary_then_detail_table(self, shapes):
+        g.add_shapes(g.GTFS(), NETWORK, verbose=True)
+
+        summary, detail = shapes.printed
+
+        assert summary.title == "Shape Generation Summary"
+        assert detail.title == "Routes Without Shapes"
+
+    def test_summary_counts_failures_per_reason(self, shapes):
+        g.add_shapes(g.GTFS(), NETWORK, verbose=True)
+
+        text = render(shapes.printed[0])
+
+        assert "Failure reason" in text
+        assert re.search(r"STOP_TOO_FAR\W+2\b", text)
+        assert re.search(r"NO_CANDIDATES\W+1\b", text)
+
+    def test_detail_table_lists_every_route(self, shapes):
+        g.add_shapes(g.GTFS(), NETWORK, verbose=True)
+
+        text = render(shapes.printed[1])
+
+        for header in ("Route Id", "Gtfs Ref", "Route Type", "Reason", "Fail Stop"):
+            assert header in text
+
+        assert re.search(r"r1\W+IC1\W+RAIL\W+STOP_TOO_FAR\W+3\b", text)
+        assert re.search(r"r2\W+S2\W+RAIL\W+STOP_TOO_FAR\W+-", text)
+        assert re.search(r"r3\W+12\W+BUS\W+NO_CANDIDATES\W+-", text)
+
+    def test_missing_fail_stop_is_shown_as_dash(self, shapes):
+        shapes.report = shapes.report.assign(
+            fail_stop=pd.Series([None, None, None], dtype=object)
+        )
+
+        g.add_shapes(g.GTFS(), NETWORK, verbose=True)
+
+        text = render(shapes.printed[1])
+
+        assert "nan" not in text.lower()
+        assert "None" not in text
+
+    def test_report_csv_is_written_with_feed_name(self, shapes, dirs, tmp_path):
+        g.add_shapes(tmp_path / "switzerland.gtfs.zip", NETWORK, verbose=True)
+
+        csv = dirs.report / "switzerland_shapes_report.csv"
+
+        assert csv.exists()
+        assert csv.read_text() == shapes.report.to_csv(index=False)
+
+    def test_report_csv_for_gtfs_object_uses_given_name(self, shapes, dirs):
+        g.add_shapes(g.GTFS(), NETWORK, verbose=True, name="france")
+
+        assert (dirs.report / "france_shapes_report.csv").exists()
+
+    def test_empty_report_still_exports_and_writes_header_only_csv(
+        self, shapes, dirs
+    ):
+        shapes.report = sample_report().iloc[0:0]
+
+        result = g.add_shapes(g.GTFS(), NETWORK, verbose=True, name="ch")
+
+        assert result is shapes.builders[0].result
+        assert (dirs.ready / "ch_with_shapes.gtfs.zip").exists()
+
+        lines = (dirs.report / "ch_shapes_report.csv").read_text().splitlines()
+        assert lines == ["route_id,gtfs_ref,route_type,reason,fail_stop"]
+
+    def test_verbose_creates_missing_report_dir(self, shapes, dirs):
+        dirs.report.rmdir()
+
+        g.add_shapes(g.GTFS(), NETWORK, verbose=True, name="ch")
+
+        assert (dirs.report / "ch_shapes_report.csv").exists()

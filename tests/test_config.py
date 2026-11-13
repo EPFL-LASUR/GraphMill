@@ -41,9 +41,21 @@ class TestPaths:
         assert cfg.DATA_DIR == cfg.PROJECT_ROOT / "data"
         assert cfg.RAW_DIR == cfg.DATA_DIR / "raw"
         assert cfg.PREPROCESS_DIR == cfg.DATA_DIR / "preprocess"
-        assert cfg.OTP_DIR == cfg.DATA_DIR / "ready"
+        assert cfg.READY_DIR == cfg.DATA_DIR / "ready"
         assert cfg.RAW_OSM_DIR == cfg.RAW_DIR / "osm"
         assert cfg.RAW_GTFS_DIR == cfg.RAW_DIR / "gtfs"
+        assert cfg.NETWORK_DIR == cfg.DATA_DIR / "network"
+        assert cfg.REPORT_DIR == cfg.DATA_DIR / "report"
+
+    def test_output_directories_are_distinct(self):
+        dirs = [
+            cfg.RAW_DIR,
+            cfg.PREPROCESS_DIR,
+            cfg.READY_DIR,
+            cfg.NETWORK_DIR,
+            cfg.REPORT_DIR,
+        ]
+        assert len(set(dirs)) == len(dirs)
 
     def test_config_file_location(self):
         assert REAL_CONFIG_FILE == cfg.PROJECT_ROOT / "config" / "config.toml"
@@ -71,6 +83,37 @@ class TestDataclasses:
         conf = cfg.Config(osm_countries=[], bbox=None, gtfs_feeds={})
         with pytest.raises(dataclasses.FrozenInstanceError):
             conf.bbox = (1, 2, 3, 4)  # type: ignore[misc]
+
+    def test_gtfs_feed_config_shapes_network_defaults_to_none(self):
+        feed = cfg.GtfsFeedConfig(provider="p", output_filename="a.zip")
+        assert feed.shapes_network is None
+
+    @pytest.mark.parametrize(
+        "value", ["switzerland", ["france", "switzerland"], None]
+    )
+    def test_gtfs_feed_config_accepts_shapes_network(self, value):
+        feed = cfg.GtfsFeedConfig(
+            provider="p", output_filename="a.zip", shapes_network=value
+        )
+        assert feed.shapes_network == value
+
+    def test_gtfs_feed_config_shapes_network_is_frozen(self):
+        feed = cfg.GtfsFeedConfig(provider="p", output_filename="a.zip")
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            feed.shapes_network = "switzerland"  # type: ignore[misc]
+
+    def test_gtfs_feed_config_can_be_copied_with_replace(self):
+        feed = cfg.GtfsFeedConfig(provider="p", output_filename="a.zip")
+        updated = dataclasses.replace(feed, shapes_network="switzerland")
+        assert updated.shapes_network == "switzerland"
+        assert feed.shapes_network is None
+
+    def test_config_can_be_copied_with_replace(self):
+        conf = cfg.Config(osm_countries=["a"], bbox=None, gtfs_feeds={})
+        feeds = {"x": cfg.GtfsFeedConfig("p", "x.zip")}
+        updated = dataclasses.replace(conf, gtfs_feeds=feeds)
+        assert updated.gtfs_feeds == feeds
+        assert conf.gtfs_feeds == {}
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +240,182 @@ url = "ub"
         assert feeds["a"].options["url"] == "ua"
         assert feeds["b"].options["url"] == "ub"
 
+    def test_load_config_is_repeatable(self, write_config):
+        # load_config must not mutate state between calls.
+        write_config(
+            MINIMAL
+            + """
+[gtfs.a]
+provider = "static_url"
+url = "u"
+shapes_network = "switzerland"
+"""
+        )
+        assert cfg.load_config() == cfg.load_config()
+
+
+# ---------------------------------------------------------------------------
+# load_config: shapes_network
+# ---------------------------------------------------------------------------
+class TestLoadConfigShapesNetwork:
+    def test_defaults_to_none(self, write_config):
+        write_config(MINIMAL + '\n[gtfs.spain]\nprovider = "static_url"\nurl = "u"\n')
+        assert cfg.load_config().gtfs_feeds["spain"].shapes_network is None
+
+    def test_as_string(self, write_config):
+        write_config(
+            MINIMAL
+            + """
+[gtfs.switzerland]
+provider = "static_url"
+url = "u"
+shapes_network = "switzerland"
+"""
+        )
+        feed = cfg.load_config().gtfs_feeds["switzerland"]
+        assert feed.shapes_network == "switzerland"
+
+    def test_as_list_preserves_order(self, write_config):
+        write_config(
+            MINIMAL
+            + """
+[gtfs.france]
+provider = "static_url"
+url = "u"
+shapes_network = ["france", "switzerland", "italy"]
+"""
+        )
+        feed = cfg.load_config().gtfs_feeds["france"]
+        assert feed.shapes_network == ["france", "switzerland", "italy"]
+
+    def test_single_item_list_stays_a_list(self, write_config):
+        write_config(
+            MINIMAL
+            + '\n[gtfs.a]\nprovider = "static_url"\nshapes_network = ["switzerland"]\n'
+        )
+        assert cfg.load_config().gtfs_feeds["a"].shapes_network == ["switzerland"]
+
+    def test_is_not_part_of_options(self, write_config):
+        write_config(
+            MINIMAL
+            + """
+[gtfs.switzerland]
+provider = "static_url"
+url = "u"
+shapes_network = "switzerland"
+"""
+        )
+        feed = cfg.load_config().gtfs_feeds["switzerland"]
+        assert feed.options == {"url": "u"}
+        assert "shapes_network" not in feed.options
+
+    def test_with_all_keys_set(self, write_config):
+        write_config(
+            MINIMAL
+            + """
+[gtfs.switzerland]
+provider = "opentransportdata_ckan"
+output_filename = "ch.zip"
+dataset_search_query = "GTFS2020"
+shapes_network = ["switzerland", "france"]
+"""
+        )
+        feed = cfg.load_config().gtfs_feeds["switzerland"]
+        assert feed.provider == "opentransportdata_ckan"
+        assert feed.output_filename == "ch.zip"
+        assert feed.options == {"dataset_search_query": "GTFS2020"}
+        assert feed.shapes_network == ["switzerland", "france"]
+
+    def test_is_set_per_feed(self, write_config):
+        write_config(
+            MINIMAL
+            + """
+[gtfs.a]
+provider = "static_url"
+url = "ua"
+shapes_network = "switzerland"
+
+[gtfs.b]
+provider = "static_url"
+url = "ub"
+
+[gtfs.c]
+provider = "static_url"
+url = "uc"
+shapes_network = ["france", "italy"]
+"""
+        )
+        feeds = cfg.load_config().gtfs_feeds
+        assert feeds["a"].shapes_network == "switzerland"
+        assert feeds["b"].shapes_network is None
+        assert feeds["c"].shapes_network == ["france", "italy"]
+
+    def test_feeds_do_not_leak_into_each_other(self, write_config):
+        # Each [gtfs.<name>] table is copied before popping keys.
+        write_config(
+            MINIMAL
+            + """
+[gtfs.a]
+provider = "static_url"
+shapes_network = "switzerland"
+
+[gtfs.b]
+provider = "static_url"
+"""
+        )
+        feeds = cfg.load_config().gtfs_feeds
+        assert feeds["a"].options == {}
+        assert feeds["b"].options == {}
+        assert feeds["b"].shapes_network is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "[]",
+            '""',
+            "5",
+            "true",
+            "[1, 2]",
+            '["a", ""]',
+            '["a", 1]',
+            "[[\"a\"]]",
+            "{ a = 1 }",
+        ],
+    )
+    def test_invalid_value_raises(self, write_config, value):
+        write_config(
+            MINIMAL
+            + f'\n[gtfs.a]\nprovider = "static_url"\nshapes_network = {value}\n'
+        )
+        with pytest.raises(ValueError, match="shapes_network"):
+            cfg.load_config()
+
+    def test_invalid_value_error_names_the_feed_and_value(self, write_config):
+        write_config(
+            MINIMAL
+            + '\n[gtfs.france]\nprovider = "static_url"\nshapes_network = []\n'
+        )
+        with pytest.raises(ValueError, match=r"gtfs\.france\.shapes_network") as exc:
+            cfg.load_config()
+
+        assert "[]" in str(exc.value)
+
+    def test_invalid_value_in_one_feed_rejects_the_whole_config(self, write_config):
+        write_config(
+            MINIMAL
+            + """
+[gtfs.good]
+provider = "static_url"
+shapes_network = "switzerland"
+
+[gtfs.bad]
+provider = "static_url"
+shapes_network = []
+"""
+        )
+        with pytest.raises(ValueError, match=r"gtfs\.bad\.shapes_network"):
+            cfg.load_config()
+
 
 # ---------------------------------------------------------------------------
 # The real config/config.toml shipped with the project
@@ -232,3 +451,36 @@ class TestRealConfig:
     def test_osm_countries_are_supported(self, real_config):
         unsupported = set(real_config.osm_countries) - SUPPORTED_COUNTRIES
         assert not unsupported
+
+    def test_shapes_network_has_no_duplicates(self, real_config):
+        # Type and emptiness are already enforced by load_config.
+        for name, feed in real_config.gtfs_feeds.items():
+            sn = feed.shapes_network
+
+            if sn is None:
+                continue
+
+            names = [sn] if isinstance(sn, str) else sn
+
+            assert len(names) == len(set(names)), f"gtfs.{name}: duplicate networks"
+
+    def test_shapes_network_countries_have_a_source_extract_or_pickle(
+        self, real_config
+    ):
+        # A network is loaded from NETWORK_DIR/<n>.pkl or built from
+        # RAW_OSM_DIR/<n>.osm.pbf. The latter is only produced for
+        # configured OSM countries.
+        known = set(real_config.osm_countries)
+
+        for name, feed in real_config.gtfs_feeds.items():
+            sn = feed.shapes_network
+
+            if sn is None:
+                continue
+
+            for network in [sn] if isinstance(sn, str) else sn:
+                has_pickle = (cfg.NETWORK_DIR / f"{network}.pkl").is_file()
+                assert network in known or has_pickle, (
+                    f"gtfs.{name}: network '{network}' is neither in osm.countries "
+                    "nor an existing pickle"
+                )

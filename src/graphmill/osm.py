@@ -3,7 +3,9 @@ import subprocess
 import httpx
 from tqdm import tqdm
 
-from .config import RAW_OSM_DIR, OTP_DIR
+from transitforge import TransitRouteBuilder, TransitRouteNetwork
+
+from .config import RAW_OSM_DIR, READY_DIR, NETWORK_DIR
 
 GEOFABRIK_BASE_URL = "https://download.geofabrik.de/europe"
 SUPPORTED_COUNTRIES = {"switzerland", "france", "germany", "italy", "liechtenstein", "austria", "netherlands", "spain", "belgium", "luxembourg"}
@@ -138,6 +140,25 @@ def filter_for_otp(input_file: Path, output_file: Path) -> Path:
     )
     return output_file
 
+def extract_pt_network(osm_pbf: str | Path):
+    """
+    Extract the public transport network from an osm.pbf file and save it as a pickle.
+    
+    This pickle can then be used to reconstruct the shapes.txt file of a GTFS feed with
+    the function add_shapes().
+    """
+
+    builder = TransitRouteBuilder(osm_pbf)
+
+    network = builder.build()
+
+    name = Path(osm_pbf).name.removesuffix(".osm.pbf")
+    output_file = NETWORK_DIR / f"{name}.pkl"
+
+    network.save(output_file)
+
+    return network
+
 
 def process(
     countries: list[str],
@@ -146,7 +167,7 @@ def process(
 ) -> list[Path]:
     """
     Wrapper to download and filter the OSM files for all countries, writing
-    one filtered .osm.pbf per country straight into OTP_DIR.
+    one filtered .osm.pbf per country straight into READY_DIR.
 
     OTP2 scans its data directory and loads every .osm.pbf file it finds, so
     there is no need to merge the per-country files into one — as long as
@@ -160,7 +181,7 @@ def process(
     download_country); the filter/clip steps always re-run regardless, since
     they're cheap relative to the download.
     """
-    OTP_DIR.mkdir(parents=True, exist_ok=True)
+    READY_DIR.mkdir(parents=True, exist_ok=True)
     raw_files = download(countries, overwrite=overwrite)
 
     outputs = []
@@ -171,7 +192,7 @@ def process(
             clipped_file = raw_file.with_name(f"{country}.clipped.osm.pbf")
             working_file = clip_to_bbox(raw_file, clipped_file, bbox)
 
-        output_file = OTP_DIR / f"{country}.osm.pbf"
+        output_file = READY_DIR / f"{country}.osm.pbf"
         filter_for_otp(working_file, output_file)
         outputs.append(output_file)
 

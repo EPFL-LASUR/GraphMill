@@ -6,44 +6,53 @@ provider = "opentransportdata_ckan"
 publisher = "opentransportdata.swiss"
 dataset_search_query = "GTFS2020"
 output_filename = "switzerland.gtfs.zip"
+shapes_network = "switzerland"
 
 [gtfs.france]
 provider = "static_url"
 url = "https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip"
 output_filename = "france.gtfs.zip"
+shapes_network = "france"
 
 [gtfs.germany]
 provider = "static_url"
 url = "https://download.gtfs.de/germany/free/latest.zip"
 output_filename = "germany.gtfs.zip"
+shapes_network = "germany"
 
 [gtfs.italy]
 provider = "static_url"
 url = "https://proxy.busone.app/trenitalia/gtfs.zip"
 output_filename = "italy.gtfs.zip"
+shapes_network = "italy"
 
 [gtfs.austria]
 provider = "static_url"
 url = "https://static.web.oebb.at/open-data/soll-fahrplan-gtfs/GTFS_Fahrplan_2026.zip"
 output_filename = "austria.gtfs.zip"
+shapes_network = "austria"
 
 [gtfs.eurostar]
 provider = "static_url"
 url = "https://integration-storage.dm.eurostar.com/gtfs-prod/gtfs_static_commercial_v2.zip"
 output_filename = "eurostar.gtfs.zip"
+shapes_network = ["france", "belgium", "netherlands"]
 
 [gtfs.netherlands]
 provider = "static_url"
 url = "https://files.mobilitydatabase.org/mdb-1077/mdb-1077-202610280127/mdb-1077-202610280127.zip"
 output_filename = "netherlands.gtfs.zip"
+shapes_network = "netherlands"
 
 [gtfs.spain]
 provider = "static_url"
 url = "https://ssl.renfe.com/gtransit/Fichero_AV_LD/google_transit.zip"
 output_filename = "spain.gtfs.zip"
+shapes_network = "spain"
 
 
 [gtfs.belgium]
 provider = "static_url"
 url = "https://data.gtfs.be/belgium/gtfs/be-gtfs.zip"
 output_filename = "belgium.gtfs.zip"
+shapes_network = "belgium"

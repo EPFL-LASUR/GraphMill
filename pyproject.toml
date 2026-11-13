@@ -10,11 +10,15 @@ requires-python = ">=3.13"
 dependencies = [
     "dataclasses>=0.8",
     "datetime>=6.0",
+    "geopy>=2.5.0",
     "gtfsmith",
     "httpx>=0.28.1",
     "osmium>=4.3.1",
+    "pandas>=3.1.1",
     "pathlib>=1.0.1",
+    "rich>=15.0.0",
     "tqdm>=4.70.1",
+    "transitforge",
     "typer>=0.27.2",
     "typing>=3.10.0.0",
 ]
@@ -26,10 +30,11 @@ graphmill = "graphmill.cli:app"
 requires = ["uv_build>=0.12.6,<0.13.0"]
 build-backend = "uv_build"
 
-[tool.uv.sources]
-gtfsmith = { git = "https://github.com/EPFL-LASUR/GTFSmith.git", tag="v0.2.2" }
-
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
 ]
+
+[tool.uv.sources]
+transitforge = { git = "https://github.com/EPFL-LASUR/TransitForge", rev = "v0.2.0" }
+gtfsmith = { git = "https://github.com/EPFL-LASUR/GTFSmith", rev = "v0.3.0" }
