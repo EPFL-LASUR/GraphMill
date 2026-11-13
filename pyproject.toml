@@ -1,6 +1,6 @@
 [project]
 name = "graphmill"
-version = "0.2.0"
+version = "0.3.0"
 description = "Download and preprocess OSM and GTFS data of Western Europe for routing machines like OTP. "
 readme = "README.md"
 authors = [
