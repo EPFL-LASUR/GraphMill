@@ -4,7 +4,8 @@ Downloads and preprocesses GTFS and OSM data that routing machines such as [Open
 
 - **OSM**: Downloads per-country `.osm.pbf` extracts from Geofabrik, optionally clips them to a bounding box, and filters them to retain the data needed by OTP (streets, platforms, park & ride, restrictions and route relations).
 - **GTFS**: Downloads public transport feeds from several sources, preprocesses them per country (stop ID prefixes, parent stations, duplicate stop merging, etc.), and optionally clips them to a bounding box.
-- **GTFS shapes**: Generates missing GTFS shapes using one or more public transport networks extracted from OSM.
+- **Public transport networks**: Extracts the public transport network (routes, stops, geometries) from OSM extracts with [TransitForge](https://github.com/EPFL-LASUR/transitforge).
+- **GTFS shapes**: Generates missing GTFS shapes using one or more of these public transport networks.
 
 The processed data is stored in `data/ready/`, ready to be used by a routing engine.
 
@@ -13,6 +14,7 @@ The processed data is stored in `data/ready/`, ready to be used by a routing eng
 - Python 3.11+ (uses `tomllib`) and [uv](https://docs.astral.sh/uv/).
 - [`osmium-tool`](https://osmcode.org/osmium-tool/) available on your `PATH` (used for clipping and filtering OSM data).
 - The `gtfsmith` package (GTFS filtering and preprocessing).
+- The `transitforge` package (public transport network extraction and GTFS shape reconstruction).
 
 Install dependencies:
 
@@ -75,7 +77,7 @@ Each GTFS feed supports the following properties:
 |---|---|
 | `provider` | Required. The provider used to download the feed. |
 | `output_filename` | Optional. Raw GTFS filename. Defaults to `<name>.gtfs.zip`. |
-| `shapes_network` | Optional. One country/network name or a list of names used to generate GTFS shapes. |
+| `shapes_network` | Optional. A non-empty network name, or a non-empty list of names, used to generate GTFS shapes. |
 | Other properties | Passed to the provider as options (e.g. `url`). |
 
 Available providers:
@@ -84,6 +86,8 @@ Available providers:
 - `static_url`
 
 Country-specific GTFS preprocessing is selected using the feed name.
+
+The configuration is validated when it is loaded: a missing `provider`, an `osm.bbox` that doesn't have exactly four values, or an invalid `shapes_network` (empty list, empty string, non-string items, wrong type) raises a `ValueError` that names the offending entry, for example `gtfs.france.shapes_network must be a non-empty string or list of strings`.
 
 ### Shape networks
 
@@ -109,21 +113,25 @@ data/raw/osm/france.osm.pbf
 
 When generating shapes, GraphMill:
 
-1. Checks whether the corresponding extracted network already exists in `data/networks/` as a `.pkl` file.
+1. Checks whether the corresponding extracted network already exists in `data/network/` as a `.pkl` file.
 2. If it exists, loads the cached network.
-3. Otherwise, extracts the public transport network from the original OSM file in `data/raw/osm/` and saves it as a `.pkl` file in `data/networks/`.
+3. Otherwise, extracts the public transport network from the original OSM file in `data/raw/osm/` and saves it as a `.pkl` file in `data/network/`.
 
 For example, the first extraction of France creates:
 
 ```text
-data/networks/france.pkl
+data/network/france.pkl
 ```
 
-Subsequent shape-generation runs reuse this file instead of extracting the network again.
+Subsequent shape-generation runs reuse this file instead of extracting the network again. To extract networks ahead of time, use the [`extract-network`](#extract-network) command.
 
-Multiple networks are combined before generating shapes. This is useful for feeds whose routes cross country borders, such as Eurostar.
+If necessary multiple networks are merged before generating shapes. This is useful for feeds whose routes cross country borders, such as Eurostar. The merge works as follows:
 
-**Important:** Shape generation uses the original OSM extracts in `data/raw/osm/`. It does not use the filtered OSM files in `data/ready/`, and it does not copy or move OSM extracts into `data/networks/`.
+- Networks are merged in the order they are listed.
+- Routes are identified by their OSM relation id. When the same relation exists in several networks (typically lines crossing an extract boundary), exactly one version is kept: the one with the most stops, then the longest geometry. On a complete tie, the network listed first wins.
+- The cached networks are never modified, so the same network can safely be combined differently for different feeds.
+
+**Important:** Shape generation uses the original OSM extracts in `data/raw/osm/`. It does not use the filtered OSM files in `data/ready/`, and it does not copy or move OSM extracts into `data/network/`.
 
 A feed without `shapes_network` is processed normally, without automatic shape generation.
 
@@ -175,6 +183,34 @@ Each country is optionally clipped and filtered to retain the data needed by OTP
 The files are not merged, since OTP loads every `.osm.pbf` in its data folder.
 
 Existing raw files are reused. `--overwrite` forces a fresh download. Clipping and filtering always run again.
+
+#### Extract networks
+
+`extract-network` extracts the public transport network of downloaded OSM extracts and saves it as a pickle. These networks are what `gtfs --shapes` and `add-shapes` use to reconstruct GTFS shapes.
+
+```bash
+# All countries listed in osm.countries (config.toml)
+uv run graphmill extract-network
+
+# Specific extracts only
+uv run graphmill extract-network -c switzerland -c france
+
+# Re-extract even if the pickle already exists
+uv run graphmill extract-network -c switzerland --overwrite
+```
+
+| Option | Description |
+|---|---|
+| `--country`, `-c` | OSM extract to process. Can be given several times. Defaults to `osm.countries` in `config.toml`. |
+| `--overwrite`, `-o` | Re-extract even if `data/network/<name>.pkl` already exists. |
+
+- The input is `data/raw/osm/<name>.osm.pbf` and the output is `data/network/<name>.pkl`. Run the `osm` command first to download the extracts.
+- Existing pickles are skipped unless `--overwrite` is given. A skipped country doesn't need its `.osm.pbf` any more.
+- The command isn't limited to the countries supported by `osm`: any `.osm.pbf` in `data/raw/osm/` works, for example a custom extract such as `grand_lausanne.osm.pbf`.
+- All required `.osm.pbf` files are checked before extraction starts, so a missing file fails immediately instead of after a long extraction.
+- Extraction reads the whole PBF several times and can take a while for large extracts.
+
+The same extraction runs automatically the first time a network is needed by `gtfs --shapes` or `add-shapes`. Running `extract-network` beforehand avoids that wait.
 
 ### GTFS
 
@@ -228,6 +264,15 @@ In this example, all three feeds are downloaded and preprocessed, but shapes are
 
 Each feed uses the network or networks configured in its `shapes_network` property.
 
+Rules for the shape options:
+
+- `--shape-feed` and `--verbose` only have an effect together with `--shapes`.
+- Every `--shape-feed` must be among the selected feeds, and must have a `shapes_network` configured. Otherwise the command fails.
+- The `--shape-feed` check happens after the GTFS feeds have been processed, not before.
+- If no selected feed has a `shapes_network`, the command prints `No feeds configured for shape generation.` and stops.
+
+Add `--verbose` (`-v`) to print a shape-generation report, see [Shape reports](#shape-reports).
+
 ### Generate shapes for already-processed feeds
 
 The standalone `add-shapes` command generates shapes for GTFS feeds that are already available in `data/ready/`.
@@ -242,7 +287,48 @@ Multiple feeds can be specified:
 uv run graphmill add-shapes -f france -f eurostar
 ```
 
-The command uses the `shapes_network` configuration for each feed. It does not download or preprocess GTFS data.
+Print the shape-generation report:
+
+```bash
+uv run graphmill add-shapes -f france --verbose
+```
+
+- `--feed` is required.
+- The command uses the `shapes_network` configuration for each feed. It does not download or preprocess GTFS data.
+- Each feed needs a `shapes_network` and an existing `data/ready/<feed>.ready.gtfs.zip`, otherwise the command fails.
+- Feeds are checked and processed one at a time. If a later feed fails its checks, the earlier feeds have already been processed.
+- Networks are loaded once and shared between the feeds of the same run.
+
+The result is written to `data/preprocess/<feed>_with_shapes.gtfs.zip`.
+
+### Shape reports
+
+With `--verbose`, both `gtfs --shapes` and `add-shapes` print:
+
+1. A summary table counting the routes without shapes per failure reason.
+2. A detailed table with one row per route without a shape (route id, GTFS ref, route type, reason, and the stop index where matching failed, when known).
+
+The same report is also written to `data/report/<feed>_shapes_report.csv`.
+
+The reasons come from TransitForge's diagnostics, for example `NO_CANDIDATES`, `NO_ROUTE_NEAR_EITHER_END`, `STOP_TOO_FAR` or `STOP_ORDER_MISMATCH`. Each reason is documented in the TransitForge README.
+
+### Filter a ready GTFS feed by route type
+
+`filter-gtfs` keeps only the given GTFS route types of feeds that are available in `data/ready/`.
+
+```bash
+# Keep only rail (2) and bus (3) routes of France
+uv run graphmill filter-gtfs -f france -m 2 -m 3
+```
+
+| Option | Description |
+|---|---|
+| `--feed`, `-f` | Required. GTFS feed name. Can be given several times. |
+| `--mode`, `-m` | Required. GTFS `route_type` to keep (integer). Can be given several times. |
+
+The input is `data/ready/<feed>.ready.gtfs.zip` and the result is saved next to it as `data/ready/<feed>_filtered.gtfs.zip`. The ready file is not modified.
+
+Feed names are validated first. A missing ready file stops the command.
 
 ### Everything
 
@@ -251,6 +337,8 @@ Download and process all configured OSM and GTFS data:
 ```bash
 uv run graphmill all
 ```
+
+`all` runs the OSM step and then the GTFS step. It doesn't generate shapes: use `gtfs --shapes`, or `add-shapes` afterwards.
 
 ## Python
 
@@ -314,6 +402,28 @@ ready = gtfs.clip_all_feeds(preprocessed, bbox=config.bbox)
 # {name: data/ready/<name>.ready.gtfs.zip}
 ```
 
+### Networks and shapes
+
+```python
+from transitforge import TransitRouteNetwork
+from graphmill import gtfs, osm
+
+# Extract a network from an OSM extract. It is also saved to
+# data/network/<name>.pkl, named after the PBF file without ".osm.pbf".
+network = osm.extract_pt_network("data/raw/osm/switzerland.osm.pbf")
+
+# Merge several networks (the earlier network wins ties). Neither input is modified.
+france = TransitRouteNetwork.load("data/network/france.pkl")
+combined = network.merge(france, verbose=False)
+
+# Add shapes to a feed (a path to a GTFS zip, or a loaded GTFS object).
+# The result is written to data/preprocess/<name>_with_shapes.gtfs.zip.
+# With verbose=True, a report is printed and saved to data/report/.
+gtfs_with_shapes = gtfs.add_shapes(
+    "data/ready/france.ready.gtfs.zip", combined, verbose=True, name="france"
+)
+```
+
 ## Adding a new GTFS source
 
 Write a function that downloads the feed and returns its path, then register it under a provider name. Nothing else needs to change.
@@ -346,22 +456,26 @@ data/
 │   │   └── ...
 │   └── gtfs/
 │       └── <feed>.gtfs.zip
-├── networks/
+├── network/
 │   ├── <country>.pkl
 │   └── ...
 ├── preprocess/
 │   ├── <feed>.preprocessed.gtfs.zip
 │   └── <feed>_with_shapes.gtfs.zip
+├── report/
+│   └── <feed>_shapes_report.csv
 └── ready/
     ├── <country>.osm.pbf
-    └── <feed>.ready.gtfs.zip
+    ├── <feed>.ready.gtfs.zip
+    └── <feed>_filtered.gtfs.zip
 ```
 
 - `data/raw/osm/` contains the original OSM extracts downloaded from Geofabrik. These are used as input when extracting public transport networks for shape generation.
 - `data/raw/gtfs/` contains the original downloaded GTFS feeds.
-- `data/networks/` contains cached, extracted public transport networks serialized as `.pkl` files. These are generated on demand when shapes are created and reused on subsequent runs.
+- `data/network/` contains the extracted public transport networks serialized as `.pkl` files. They are written by `extract-network`, or generated on demand when shapes are created, and reused on subsequent runs.
 - `data/preprocess/` contains intermediate GTFS files and GTFS files exported after shape generation.
-- `data/ready/` contains the processed OSM and GTFS files.
+- `data/report/` contains the shape-generation reports written with `--verbose`.
+- `data/ready/` contains the processed OSM and GTFS files, and the route-type-filtered feeds written by `filter-gtfs`.
 
 Existing files are reused rather than rebuilt.
 
@@ -369,7 +483,9 @@ For GTFS, `--overwrite` forces every stage (download, preprocess and clip) to ru
 
 For OSM, `--overwrite` only forces a fresh download; clipping and filtering always run again.
 
-The original OSM extracts are never copied into `data/networks/`.
+For network extraction, `--overwrite` forces the pickles to be extracted again.
+
+The original OSM extracts are never copied into `data/network/`.
 
 ## Tests
 
@@ -377,7 +493,52 @@ The original OSM extracts are never copied into `data/networks/`.
 uv run pytest
 ```
 
-The tests use no network access and do not need `osmium`.
+The tests use no network access and do not need `osmium`. Downloads, the OSM and GTFS processing steps, the shape builder and the network extraction are replaced by fakes, so only GraphMill's own logic is tested.
+
+What is covered:
+
+- **`config`**
+  - the data directory layout, including `data/network/` and `data/report/`;
+  - `[osm]` parsing: countries, `bbox` conversion and validation, missing sections and keys, missing or invalid files;
+  - `[gtfs.<name>]` parsing: provider, `output_filename` default, extra options, copied tables;
+  - `shapes_network`: default, string and list values, order, not leaking into `options`, per-feed values, rejection of invalid values with a message naming the feed;
+  - the dataclasses are frozen and can be copied with `dataclasses.replace`;
+  - the real `config/config.toml`: known providers, URLs, unique output filenames, supported OSM countries, valid `shapes_network` entries.
+
+- **`gtfs`**
+  - CKAN discovery, localized names, resource dates and picking the latest ZIP;
+  - downloads: headers, redirects, temporary files and error cleanup;
+  - the provider registry, `static_url` and CKAN providers, overwrite behavior;
+  - clipping, the per-country preprocessors, `preprocess_all_feeds`, and `process` stage ordering;
+  - `add_shapes`:
+    - input as a GTFS object, a `Path` or a `str`, and how the feed name is derived;
+    - the builder receives the network and `verbose` as diagnostics flag;
+    - the built feed is exported to `data/preprocess/` and returned;
+    - quiet mode prints nothing and writes no report;
+    - verbose mode prints the summary and detail tables, shows missing fail stops as `-`, and writes the CSV (also for an empty report);
+    - the report directory is created when missing.
+
+- **`osm`**
+  - `extract_pt_network`:
+    - the builder receives the PBF path (`str` or `Path`) with default route types;
+    - the network is built once and saved in `data/network/` under the PBF's name without `.osm.pbf`;
+    - failures during build or save propagate, and nothing is saved if the build fails;
+    - a real network round-trips through the saved pickle.
+
+- **`cli`**
+  - `_parse_bbox`, and the `osm`, `gtfs` and `all` commands: option forwarding, config defaults, validation and error exit codes;
+  - `_load_one_network`: cached pickle, extraction from the PBF, missing files, directory creation;
+  - `_load_networks`: single and merged networks, cache reuse, cached networks left unmodified, tie order, duplicates;
+  - `gtfs --shapes`: feed selection with `--shape-feed`, shared network cache, validation errors, processing order;
+  - `add-shapes`: required options, ready file and `shapes_network` checks, one-by-one processing, shared cache;
+  - `filter-gtfs`: required options, multiple feeds and modes, output name, unknown feeds and missing ready files;
+  - `extract-network`:
+    - country selection (config defaults, `--country`, duplicates, order, custom extracts);
+    - skipping existing pickles and `--overwrite`;
+    - missing PBF files are rejected before any extraction starts;
+    - progress messages, and extraction failures stopping the run.
+
+Tests for merging networks and the TransitForge matching and diagnostics live in the TransitForge repository.
 
 ## Git
 
